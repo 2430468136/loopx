@@ -204,6 +204,7 @@ async function main() {
         results[scenario.id] = {
           status: "PASS",
           note: result.note,
+          ...(result.measurements ? {measurements: result.measurements} : {}),
           duration_ms: Date.now() - startedAt,
         };
       } catch (error) {

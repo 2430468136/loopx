@@ -700,6 +700,20 @@ their existing 2-second checks. Historical failures are not reclassified by this
 rule; cross-host, installed, live-team, full-cost and unrelated CI qualification
 still require their own evidence.
 
+Coverage-enabled source runs now execute the complete M2 journey without V8
+coverage first, enforcing the same initial-render/expansion limits and all 15
+loaded-lens samples. A second complete journey collects coverage and reports its
+timings as diagnostics; its classification, selection, no-effect, error and
+remote-source checks remain blocking. The acceptance result retains both
+`renderQualification` and `coverageDiagnostics`; ordinary and packaged runs
+execute only the uninstrumented qualification. A failed uninstrumented gate
+fails the combined run before coverage can supply a replacement result.
+This follows the existing uninstrumented measurement rule. It changes neither
+the workload nor the numerical budgets and does not reclassify previous
+coverage-enabled Linux failures. Same-source Node 22 measurements show coverage
+overhead locally, but do not identify the sole cause of the Linux slowdown or
+qualify cross-host, installed, kernel-cost or team-adoption claims.
+
 **Checkpoint 2026-10-11 (M1 proposed at `6c3c0c104` in [#6191](https://github.com/loopx-project/loopx/pull/6191), subsequently merged).**
 Verified subset: V1 reducer fixtures written from Section 5.3, mutation checks
 and the packaged page on synthetic status; V2 strip and Board sharing the work
