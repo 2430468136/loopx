@@ -3893,7 +3893,8 @@ def test_turn_run_once_cli_uses_built_in_codex_host_and_typed_writeback(
 
     host_calls: list[str] = []
 
-    def fake_codex_host(request: dict[str, object], **_kwargs: object) -> dict[str, object]:
+    def fake_codex_host(request: dict[str, object], **kwargs: object) -> dict[str, object]:
+        assert kwargs["timeout_seconds"] == 3.0
         host_calls.append(str(request["turn_key"]))
         return {
             "schema_version": "loopx_turn_result_v0",
@@ -3943,6 +3944,8 @@ def test_turn_run_once_cli_uses_built_in_codex_host_and_typed_writeback(
                 "codex-fixture",
                 "--host",
                 "codex-cli",
+                "--timeout-seconds",
+                "3",
                 "--project",
                 str(project),
                 "--validation-command-json",

@@ -133,7 +133,7 @@ def build_codex_cli_host_runner(
             "model": args.codex_model,
             "reasoning_effort": args.codex_reasoning_effort,
             "mcp_server": args.codex_mcp_server_json,
-            "timeout_seconds": None if args.timeout_seconds is None else max(1.0, args.timeout_seconds - 5.0),
+            "timeout_seconds": args.timeout_seconds,
         }
         options["goal_admission"] = (
             goal_admission or FirstPartyHostGoalAdmission.for_plan(
@@ -146,6 +146,8 @@ def build_codex_cli_host_runner(
                 run_codex_operation_host,
             )
 
+            if args.timeout_seconds is not None:
+                options["timeout_seconds"] = max(1.0, args.timeout_seconds - 5.0)
             return run_codex_operation_host(
                 request,
                 registry_path=registry_path,
