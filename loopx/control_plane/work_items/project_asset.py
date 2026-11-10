@@ -86,7 +86,7 @@ def project_asset_stop_condition(
         return monitor_display_stop_condition
     if agent_command:
         return "stop if the command fails or needs write, production, or additional approval"
-    return "stop before assigning rewards, approving gates, changing write controls, or accessing production without the required authority"
+    return "stop before unauthorized reward assignment, gate approval, write-control changes, or production access"
 
 
 def project_asset_support_mode(

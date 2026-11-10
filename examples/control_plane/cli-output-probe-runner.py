@@ -159,8 +159,7 @@ def _quota_control_observation(value: Any) -> dict[str, Any] | None:
     # Compare the intentional reward-authority clarification in its forward
     # direction. Hash every other original control, including scope and rule.
     if boundary["stop_condition"] == (
-        "stop before assigning rewards, approving gates, changing write controls, "
-        "or accessing production without the required authority"
+        "stop before unauthorized reward assignment, gate approval, write-control changes, or production access"
     ):
         prior = {**controls["boundary"], "stop_condition":
             "stop if the next action needs reward, gate approval, write control, or production access"}

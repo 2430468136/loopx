@@ -93,8 +93,7 @@ def test_reward_boundary_refinement_is_directional_and_preserves_all_other_contr
         "stop if the next action needs reward, gate approval, write control, or production access")
     after = copy.deepcopy(before)
     after["goal_boundary"]["stop_condition"] = (
-        "stop before assigning rewards, approving gates, changing write controls, "
-        "or accessing production without the required authority")
+        "stop before unauthorized reward assignment, gate approval, write-control changes, or production access")
     assert _matching_quota_controls(row(before), row(after))
     assert not _matching_quota_controls(row(after), row(before))
     for path, value in ((("goal_boundary", "stop_condition"), "stop only on reward"),
