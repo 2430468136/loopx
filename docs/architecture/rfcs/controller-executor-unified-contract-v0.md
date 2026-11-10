@@ -1024,6 +1024,13 @@ the original Turn journal and independent validation. Cross-admission resume,
 a matched outcome/cost comparison, and Managed Host, Chat and Steward
 qualification remain open.
 
+A short public permutation trial through the heartbeat entry produced a
+single-worker artifact, an independent pass and one committed spend. A later
+Turn timed out without spending. Two live native role threads also ran on the
+case, but the guest tool backend failed before producing an accepted artifact.
+The cold dual-role entry now probes native sandbox execution before inference.
+The local scores and different native tool architectures do not qualify a topology default.
+
 **Then switch topology at new Turn admission.** The target is one profile choice
 for the same captured work on either governed entry. Single worker is the
 compatibility default. In the opt-in profile one Controller consumes Core

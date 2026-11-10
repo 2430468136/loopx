@@ -17,7 +17,8 @@ from ..content_digest import BARE_SHA256_PATTERN
 
 
 from .execution_preparation import (
-    CommandRunner, compact_execution_preparation_request, default_runner as _default_runner,
+    CommandRunner, compact_execution_preparation_request as compact_execution_preparation_request,
+    default_runner as _default_runner,
     execute_ordinary_claim, run_json,
 )
 
