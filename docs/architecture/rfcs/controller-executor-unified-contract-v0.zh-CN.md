@@ -820,6 +820,8 @@ flowchart TB
 [单 Worker 接入](https://github.com/loopx-project/loopx/pull/8480) ·
 [产品 provider 与实验对照](https://github.com/loopx-project/loopx/pull/8484)
 
+C1 对照与隔离的双角色验证可并行。绑定确切的 C1 版本，契约变更后重验受影响的调用方，再决定生产切换。
+
 **相同的准入与结算。** Quota 选定工作并负责常规领取。领取成功后回读同一 Todo，
 核实 lease 再派发。C1 交付 Goal 的完整要求与原决策。Host 核对内联完整决策与
 journal 中捕获的原件，两个角色的沙箱均隔离 Core 私有文件。Controller 派发范围内的

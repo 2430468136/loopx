@@ -1004,6 +1004,8 @@ The benchmark adapter supplies the profile, task validator and judge settings.
 [Single-worker integration](https://github.com/loopx-project/loopx/pull/8480) ·
 [Product provider and experiment controls](https://github.com/loopx-project/loopx/pull/8484)
 
+The C1 control comparison and isolated dual-role qualification may run in parallel. Pin the C1 revision and requalify affected callers after a contract change before production cutover.
+
 **Same admission and settlement.** Quota selects the work and owns the ordinary
 claim. After a successful claim, reread the very same Todo and verify its lease
 before dispatch. Deliver the canonical Goal requirements and original decision

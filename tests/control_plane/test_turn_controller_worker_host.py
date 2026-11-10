@@ -73,6 +73,8 @@ def test_correction_readback_never_starts_another_uncertain_or_completed_attempt
     evidence["result"] = {"result_kind": "validated_progress"}
     path.write_text(json.dumps(evidence))
     recovery = {**request, "result_contract": {"correction": "Correct the original receipt."}}
+    with pytest.raises(RuntimeError, match="original role attempt"):
+        roles.prepare_role_attempt(tmp_path / "missing-original.json", journal, recovery)
     journal.write_text(json.dumps({"status": "committed"}))
     with pytest.raises(RuntimeError, match="no authorized Host retry"):
         roles.prepare_role_attempt(path, journal, recovery)

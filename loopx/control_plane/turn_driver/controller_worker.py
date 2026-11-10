@@ -278,6 +278,8 @@ def prepare_role_attempt(path, journal, request):
     """Select the original result or the one Core-authorized receipt repair under the role lock."""
     request_hash = digest(request)
     if not path.exists():
+        if "correction" in request["result_contract"]:
+            raise RuntimeError("original role attempt requires reconciliation")
         evidence = {"turn_key": request["turn_key"], "input_sha256": request_hash, "threads": {}, "steps": []}
         return evidence, evidence
 
