@@ -18,7 +18,7 @@ from loopx.control_plane.effect_runtime import effect_runtime_result
 from loopx.control_plane.goals.first_party_host_admission import FirstPartyHostGoalAdmission
 from loopx.control_plane.quota.turn_envelope import COMPLETE_TURN_HOST_REQUEST_SCHEMA
 from loopx.control_plane.runtime.document_io import atomic_write_private_json
-from loopx.control_plane.turn_driver.codex_cli import normalize_codex_result, prepare_codex_cli_input
+from loopx.control_plane.turn_driver.codex_cli import codex_cli_result_schema, normalize_codex_result, prepare_codex_cli_input
 from loopx.control_plane.turn_driver.codex_stdio import StdioNativeGoalTransport, disable_mcp_servers
 from loopx.control_plane.turn_driver.decision_capture import read_turn_observation_text
 from loopx.control_plane.turn_driver.executor import MATERIAL_HOST_RESULT_KINDS
@@ -113,7 +113,7 @@ class RoleTransport:
         self.rpc.response_timeout_sec = min(30, self.remaining())
         return self.rpc.request(method, params)
 
-    def start(self, role):
+    def start(self, role, *, resume_thread=None):
         cwd = str(self.host.project)
         effective = self.request("config/read", {"cwd": cwd, "includeLayers": False})["config"]
         config = {"web_search": "disabled", "project_doc_max_bytes": 0, "skills": {"include_instructions": False}}
@@ -127,13 +127,27 @@ class RoleTransport:
                               "hooks": False, "browser_use": False, "computer_use": False,
                               "goals": False, "js_repl": False}
         params["config"] = disable_mcp_servers(effective, config)
+        binding = self.evidence.get("host_models", {}).get(role)
+        if resume_thread is not None:
+            if not isinstance(binding, dict) or not all(
+                isinstance(binding.get(key), str) and binding[key] for key in ("model", "modelProvider")
+            ):
+                raise RuntimeError("original Controller model binding unavailable")
+            params.update(threadId=resume_thread, excludeTurns=True,
+                          model=binding["model"], modelProvider=binding["modelProvider"])
         with self.admission.launch_lifetime(operation="turn_role_thread_start"):
-            observed = self.request("thread/start", params)
+            observed = self.request("thread/resume" if resume_thread is not None else "thread/start", params)
         thread = observed["thread"]["id"]
         if (not isinstance(thread, str) or not thread or thread in self.threads.values()
+                or (resume_thread is not None and thread != resume_thread)
                 or observed.get("approvalPolicy") != "never" or observed.get("runtimeWorkspaceRoots") != [cwd]
                 or (observed.get("activePermissionProfile") or {}).get("id") != profile):
             raise RuntimeError("native role identity or permissions unconfirmed")
+        observed_model = {key: observed.get(key) for key in ("model", "modelProvider")}
+        if (not all(isinstance(value, str) and value for value in observed_model.values())
+                or (resume_thread is not None and observed_model != binding)):
+            raise RuntimeError("native role model binding unconfirmed")
+        self.evidence.setdefault("host_models", {})[role] = observed_model
         self.threads[role] = thread
         self.evidence["threads"][role] = thread
         self.save()
@@ -260,6 +274,54 @@ def interrupt_on_stop():
         signal.signal(signal.SIGTERM, previous)
 
 
+def prepare_role_attempt(path, journal, request):
+    """Select the original result or the one Core-authorized receipt repair under the role lock."""
+    request_hash = digest(request)
+    if not path.exists():
+        evidence = {"turn_key": request["turn_key"], "input_sha256": request_hash, "threads": {}, "steps": []}
+        return evidence, evidence
+
+    evidence = json.loads(path.read_text())
+    if not isinstance(evidence.get("result"), dict):
+        raise RuntimeError("original role attempt requires reconciliation")
+    if evidence["input_sha256"] == request_hash:
+        return evidence, evidence
+
+    # Only the result-contract feedback may differ from the completed attempt.
+    contract = dict(request["result_contract"])
+    feedback = contract.pop("correction", None)
+    if (not isinstance(feedback, str) or not feedback
+            or digest({**request, "result_contract": contract}) != evidence["input_sha256"]):
+        raise RuntimeError("original role attempt requires reconciliation")
+    correction = evidence.get("correction")
+    if correction is not None:
+        if correction.get("input_sha256") == request_hash and isinstance(correction.get("result"), dict):
+            return evidence, correction
+        raise RuntimeError("original receipt correction requires reconciliation")
+
+    audit = json.loads(journal.read_text()).get("recovery_audit") or {}
+    planned = audit.get("planned") or {}
+    if (planned.get("retry_failed") is not True or planned.get("reinvoke_host") is not True
+            or planned.get("resume_from") != "host_execute" or (audit.get("actual") or {}).get("status") != "started"):
+        raise RuntimeError("original Turn has no authorized Host retry")
+    correction = {"input_sha256": request_hash}
+    evidence["correction"] = correction
+    return evidence, correction
+
+
+def correct_original_receipt(native, request, evidence):
+    controller = evidence["threads"].get("controller")
+    if not isinstance(controller, str) or not controller or controller == evidence["threads"].get("worker"):
+        raise RuntimeError("original Controller identity unavailable")
+    native.start("controller", resume_thread=controller)
+    feedback = request["result_contract"]["correction"]
+    reply = native.send("controller", feedback + " Return the corrected typed Turn result.",
+                        codex_cli_result_schema(request))
+    if reply.get("result_kind") != evidence["result"].get("result_kind"):
+        raise ValueError("receipt correction changed the original result kind")
+    return normalize_codex_result(request, reply)
+
+
 def serve(request, host):
     if request.get("schema_version") != COMPLETE_TURN_HOST_REQUEST_SCHEMA:
         raise ValueError("controller-worker requires a complete C1 Turn request")
@@ -302,11 +364,9 @@ def serve(request, host):
     with try_exclusive_file_lock(path) as lock:
         if lock is None:
             raise RuntimeError("original role attempt is still active")
-        if path.exists():
-            prior = json.loads(path.read_text())
-            if prior.get("input_sha256") == digest(request) and isinstance(prior.get("result"), dict):
-                return prior["result"]
-            raise RuntimeError("original role attempt requires reconciliation")
+        evidence, attempt = prepare_role_attempt(path, journal, request)
+        if isinstance(attempt.get("result"), dict):
+            return attempt["result"]
         # Test the selected executable and workspace sandbox before paid inference.
         # Turn supervision also enforces the outer deadline over this preflight.
         probe = subprocess.run([host.codex_bin, "sandbox", "-P", ":workspace", "--",
@@ -314,7 +374,6 @@ def serve(request, host):
                                capture_output=True, timeout=min(15, timeout))
         if probe.returncode:
             raise RuntimeError("Native Codex workspace sandbox is unavailable")
-        evidence = {"turn_key": key, "input_sha256": digest(request), "threads": {}, "steps": []}
         def save():
             atomic_write_private_json(path, evidence)
         save()
@@ -325,8 +384,11 @@ def serve(request, host):
             native.request("initialize", {"clientInfo": {"name": "loopx_turn", "version": "1"},
                                          "capabilities": {"experimentalApi": True}})
             rpc.notify("initialized", {})
-            result = run_roles(native, request, material)
-        evidence["result"] = result
+            if attempt is evidence:
+                result = run_roles(native, request, material)
+            else:
+                result = correct_original_receipt(native, request, evidence)
+        attempt["result"] = result
         save()
         return result
 

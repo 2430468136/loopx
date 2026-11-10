@@ -66,9 +66,36 @@ def test_native_role_permissions_cap_the_callers_grant(tmp_path, permission):
         assert rules["network"]["enabled"] is False
 
 
+def test_correction_readback_never_starts_another_uncertain_or_completed_attempt(tmp_path):
+    path, journal = tmp_path / "roles.json", tmp_path / "turn.json"
+    request = {"turn_key": "original", "work_contract": {"todo": "selected"}, "result_contract": {}}
+    evidence, _ = roles.prepare_role_attempt(path, journal, request)
+    evidence["result"] = {"result_kind": "validated_progress"}
+    path.write_text(json.dumps(evidence))
+    recovery = {**request, "result_contract": {"correction": "Correct the original receipt."}}
+    journal.write_text(json.dumps({"status": "committed"}))
+    with pytest.raises(RuntimeError, match="no authorized Host retry"):
+        roles.prepare_role_attempt(path, journal, recovery)
+
+    journal.write_text(json.dumps({"recovery_audit": {
+        "planned": {"retry_failed": True, "reinvoke_host": True, "resume_from": "host_execute"},
+        "actual": {"status": "started"},
+    }}))
+    with pytest.raises(RuntimeError, match="original role attempt"):
+        roles.prepare_role_attempt(path, journal, {**recovery, "work_contract": {"todo": "other"}})
+    evidence, correction = roles.prepare_role_attempt(path, journal, recovery)
+    path.write_text(json.dumps(evidence))
+    with pytest.raises(RuntimeError, match="correction requires reconciliation"):
+        roles.prepare_role_attempt(path, journal, recovery)
+    correction["result"] = {"result_kind": "validated_progress", "work_evidence": ["artifact"]}
+    path.write_text(json.dumps(evidence))
+    assert roles.prepare_role_attempt(path, journal, recovery)[1]["result"] == correction["result"]
+    assert roles.prepare_role_attempt(path, journal, request)[1]["result"] == evidence["result"]
+
+
 @pytest.mark.skipif(os.environ.get("LOOPX_TEST_NATIVE_ROLE_HOST") != "1",
                     reason="opt-in installed Codex with native filesystem isolation")
-@pytest.mark.parametrize("entry", ["turn", "benchmark"])
+@pytest.mark.parametrize("entry", ["turn", "benchmark", "receipt-repair"])
 def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
     from tests.control_plane.canonical_authority_fixture import initialize_canonical_source_fixture
     from tests.control_plane.codex_checkpoint_fixture import local_inference_provider
@@ -115,6 +142,12 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
                 "delivery_batch_scale": "single_surface", "delivery_outcome": "outcome_progress",
                 "vision_unchanged_reason": "The objective is unchanged.", "summary": "Updated the artifact.",
                 "work_evidence": ["artifact:marker"], "validation_evidence": ["check:marker-readback"]}}
+        if entry == "receipt-repair" and index == 7:
+            answer["result"]["work_evidence"] = ["/tmp/private-marker"]
+        if index == 8:
+            assert "previous result failed" in text
+            assert "/tmp/private-marker" not in text
+            answer = answer["result"]
         message["content"][0]["text"] = json.dumps(answer)
         return message
 
@@ -155,8 +188,17 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
                    "--controller-material", str(material), "--codex-sandbox", "workspace-write",
                    "--validation-command-json", json.dumps(fixture["_validator_command"](expected))]
         completed = subprocess.run(cmd, cwd=project, env=env, timeout=85, capture_output=True, text=True)
+        if entry == "receipt-repair":
+            first = json.loads(completed.stdout)
+            assert first["validation_stage"] == "host_result_contract"
+            assert fixture["_quota_spend_count"](runtime) == 0
+            original_worker_write = (project / marker).stat().st_mtime_ns
+            offset = cmd.index("--turn-instance-id")
+            retry = cmd[:offset] + ["--resume-turn-key", first["resume_turn_key"], "--retry-failed-turn"] + cmd[offset + 2:]
+            completed = subprocess.run(retry, cwd=project, env=env, timeout=85, capture_output=True, text=True)
+            assert (project / marker).stat().st_mtime_ns == original_worker_write
         assert completed.returncode == 0, completed.stdout[-2200:] + completed.stderr[-500:]
-    assert len(inputs) == 7 and "Copy the checked observation" in inputs[4]
+    assert len(inputs) == (8 if entry == "receipt-repair" else 7) and "Copy the checked observation" in inputs[4]
     assert all("work_contract" not in inputs[i] for i in (1, 2, 4, 5))
     assert (project / marker).read_text() == expected
     if entry == "benchmark":
@@ -184,7 +226,10 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
     record, = (runtime / "goals" / goal / "turns/controller-worker").glob("*.json")
     observation = json.loads(record.read_text())
     assert len(set(observation["threads"].values())) == 2
-    assert [s["role"] for s in observation["steps"]] == ["controller", "worker", "controller", "worker", "controller"]
+    expected_roles = ["controller", "worker", "controller", "worker", "controller"]
+    if entry == "receipt-repair":
+        expected_roles.append("controller")
+    assert [s["role"] for s in observation["steps"]] == expected_roles
     assert all(s["thread_token_usage_total"]["totalTokens"] > 0 for s in observation["steps"])
     assert fixture["_quota_spend_count"](runtime) == 1
 

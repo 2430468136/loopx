@@ -105,6 +105,12 @@ The result identifies its topology. Resume the same Turn with its original Host
 configuration. Switch topology on a new Turn. Missing native sandbox support
 prevents role inference. Role IDs, causal steps and usage are in the original
 Goal's private `turns/controller-worker/` record.
+If Core rejects the structured receipt after task work completes, an authorized
+`--retry-failed-turn` resumes the original read-only Controller to repair that
+receipt. The native thread, model, provider, original work and result kind stay
+bound. Core independently validates the artifact and settles once. A completed
+repair replays its saved result. An interrupted repair requires reconciliation.
+Older role records without the original model binding also require reconciliation.
 
 The reference provider uses a separately launched Codex App Server. A caller
 able to run the headless Turn may use it from a CLI, scheduler or external Host.
