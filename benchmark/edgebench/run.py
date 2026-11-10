@@ -144,6 +144,7 @@ def main(argv=None):
                         help="Per-attempt cap for explicit native readiness setup, at most 25s; "
                              "omitted keeps 25s (not a model retry)")
     # Preserve the existing unique abbreviation after adding --managed-run-json.
+    parser.add_argument("--container-cpus", type=int, help="CPU limit per cold work and judge container (default 4)")
     parser.add_argument("--model", "--m", required=True)
     parser.add_argument("--effort", choices=REASONING_EFFORTS, required=True)
     parser.add_argument("--provider-rate-limit-retry-seconds", type=int, default=0,
@@ -202,6 +203,8 @@ def main(argv=None):
                         help="Host services run on Docker's default bridge (e.g. runner inside a VM); "
                              "pin host.docker.internal there instead of Docker's host-gateway alias")
     args = parser.parse_args(argv)
+    if args.container_cpus is not None and (args.container_cpus < 1 or args.restore_checkpoint):
+        parser.error("--container-cpus requires a positive limit on a cold trial")
     try:
         execution = profile_execution(
             args.worker, task_entry=args.task_entry,
@@ -383,10 +386,10 @@ def main(argv=None):
         agent_api_base_url=api_base_url, agent_api_key=api_key,
         agent_model=args.model, agent_effort=args.effort,
         agent_timeout=args.timeout, log_dir=args.log_dir, tasks_dir=args.tasks_dir,
-        work_cpu_limit=4, work_mem_limit="16g",
+        work_cpu_limit=args.container_cpus or 4, work_mem_limit="16g",
         # A restored judge already owns its captured resource profile. Cold
         # defaults must not replace or conflict with that live registration.
-        judge_cpu_limit=None if args.restore_checkpoint else 4,
+        judge_cpu_limit=None if args.restore_checkpoint else (args.container_cpus or 4),
         judge_mem_limit=None if args.restore_checkpoint else "8g",
     )
     try:
@@ -508,6 +511,7 @@ def main(argv=None):
     receipt = {
         "run_id": args.run_id, "task": args.task, "worker": args.worker,
         "task_entry": agent.task_entry,
+        **({"container_cpus": config.work_cpu_limit} if not args.restore_checkpoint else {}),
         **execution.validation_receipt(),
         **({"planning_timeout_seconds": None}
            if agent.task_entry == "loopx-planned" else {}),

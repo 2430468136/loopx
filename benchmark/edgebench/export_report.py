@@ -355,6 +355,10 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
             if key in receipt:
                 for target in ("runner", "worker_profile"):
                     config[target][key] = receipt[key]
+        if "container_cpus" in receipt:
+            if type(receipt["container_cpus"]) is not int or receipt["container_cpus"] < 1:
+                raise ValueError("Invalid runtime container CPU limit")
+            config["runner"]["container_cpus"] = receipt["container_cpus"]
         if "feedback_payload" in receipt:
             config["runner"]["feedback_payload"] = receipt["feedback_payload"]
             config["worker_profile"]["feedback_payload"] = profile["feedback_payload"]
