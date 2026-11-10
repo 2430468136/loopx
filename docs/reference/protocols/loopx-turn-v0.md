@@ -110,9 +110,16 @@ If Core rejects the structured receipt after task work completes, an authorized
 receipt. The native thread, model, provider, original work and result kind stay
 bound. Core independently validates the artifact and settles once. A completed
 repair replays its saved result. An interrupted repair requires reconciliation.
-Older role records without the original model binding also require reconciliation.
+Previously completed role records remain readable. Repairing a pre-CLI attempt or
+an attempt without its original model binding requires reconciliation.
 
-The reference provider uses a separately launched Codex App Server. A caller
+The reference provider starts both roles with `codex exec --json` and continues each
+with `codex exec resume` and its original session ID. It uses the selected native
+account and model provider. No MCP service is required for role handoff. The Host
+reads the names and transport types of configured MCP sources to disable them for
+the invocation. The user's configuration stays with Codex. The Controller receives
+both its own read-only grant and the Worker's effective grant. A writable Worker
+uses its workspace for shell temporary files. A caller
 able to run the headless Turn may use it from a CLI, scheduler or external Host.
 An interactive Codex App heartbeat or an existing Chat/Steward connection owns
 its current conversation. Adopting this profile there requires an authorized
