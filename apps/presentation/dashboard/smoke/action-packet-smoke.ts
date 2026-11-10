@@ -141,7 +141,7 @@ const platformMigrationNoEvidencePacket = buildActionPacket({
   projectOwner: "codex",
   projectGate: "none",
   projectNextAction: "Refresh the public-safe material registry summary.",
-  projectStopCondition: "stop if the next action needs reward, gate approval, write control, or production access",
+  projectStopCondition: "stop before assigning rewards, approving gates, changing write controls, or accessing production without the required authority",
   projectAssetSource: "project_asset",
   handoffReadinessLine: "ready; codex_ready=true; source=project_asset; quota=eligible; failed=none",
 });
@@ -149,7 +149,7 @@ const platformMigrationNoEvidencePacket = buildActionPacket({
 assert(platformMigrationNoEvidencePacket.includes("目标：platform-migration-material-registry"), "missing platform migration target");
 assert(platformMigrationNoEvidencePacket.includes("Project Asset：Owner=codex；Gate=none"), "missing platform project asset owner/gate");
 assert(platformMigrationNoEvidencePacket.includes("Next：Refresh the public-safe material registry summary."), "missing platform next action");
-assert(platformMigrationNoEvidencePacket.includes("Stop：stop if the next action needs reward"), "missing platform stop condition");
+assert(platformMigrationNoEvidencePacket.includes("Stop：stop before assigning rewards"), "missing platform stop condition");
 assert(platformMigrationNoEvidencePacket.includes("Handoff：ready; codex_ready=true; source=project_asset; quota=eligible; failed=none"), "missing platform handoff readiness");
 assert(platformMigrationNoEvidencePacket.includes("Quota：Eligible; 0/1440 slots"), "missing platform quota context");
 assert(platformMigrationNoEvidencePacket.includes("Authority：entries 0/3; topics 3; materials 6; repos 2; owner review 1; stale 1; risk medium"), "missing platform material context");
