@@ -8,7 +8,6 @@ import os
 import shutil
 import signal
 import subprocess
-import sys
 import time
 import uuid
 from contextlib import ExitStack, contextmanager, nullcontext
@@ -316,10 +315,9 @@ def turn_command(
             "--codex-reasoning-effort", env["REASONING_EFFORT"], "--codex-bin", env["CODEX_BIN"],
             "--codex-model", env["MODEL_NAME"], "--codex-sandbox", execution.sandbox]
     if execution.controller_worker:
-        from loopx.control_plane.quota.turn_envelope import COMPLETE_TURN_HOST_REQUEST_SCHEMA
-
-        host = ["--host", "generic-cli", "--host-adapter-request-schema", COMPLETE_TURN_HOST_REQUEST_SCHEMA,
-                "--host-adapter-command-json", json.dumps([sys.executable, "-P", "-m", "benchmark.runtime.controller_worker"])]
+        host.extend(["--topology", "controller-worker"])
+        if env.get("LOOPX_TASK_DOC"):
+            host.extend(["--controller-material", env["LOOPX_TASK_DOC"]])
     return loopx_command(env) + [
         "turn",
         "run-once",
@@ -727,11 +725,6 @@ def run_once(env: dict[str, str]) -> dict:
                         if retry_failed:
                             pending["correction_started"] = True
                             atomic_write_private_json(pending_path, pending)
-                    if execution.controller_worker:
-                        if execution.timeout_seconds is None:
-                            raise ValueError("controller-worker requires a finite Turn or phase deadline")
-                        env["LOOPX_ROLE_TIMEOUT_SECONDS"] = str(execution.timeout_seconds)
-                        env["LOOPX_ROLE_OBSERVATION"] = str(wake / "roles.json")
                 command = (
                     turn_command(
                         env,

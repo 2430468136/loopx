@@ -1,18 +1,17 @@
-"""Two native Codex threads serving one benchmark Turn through the v1 Host ABI.
-
-The product owns admission, independent validation, recovery and settlement.
-This disposable adapter owns only native IO and its private attempt evidence.
-"""
+"""Codex Controller and Worker sessions serving one admitted Turn over the v1 Host ABI."""
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
 import os
 import signal
+import subprocess
 import sys
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from loopx.capabilities.native_chat.codex_context import disable_mcp_servers
@@ -41,10 +40,41 @@ WORK_REPORT = object_schema({"finding": {"type": "string"},
                              "artifacts": {"type": "array", "items": {"type": "string"}}})
 
 
-def role_policy(role, project, env, capture):
-    # Start from the same workspace-only native permission owner as project
-    # conversations. Preserve the guest's task root and exclude Core state.
-    writable = role == "worker" and env["LOOPX_CODEX_SANDBOX"] != "read-only"
+@dataclass(frozen=True)
+class RoleHost:
+    project: Path
+    runtime: Path
+    registry: Path
+    codex_home: Path
+    codex_bin: str
+    model: str | None
+    effort: str | None
+    sandbox: str
+    timeout: float
+    material: Path | None = None
+    material_sha256: str | None = None
+    goal_state: Path | None = None
+
+    @property
+    def protected(self):
+        return (self.runtime, self.registry, self.codex_home, self.project / ".codex",
+                self.project / ".loopx", self.project / ".git", self.project / "ACTIVE_GOAL_STATE.md",
+                *((self.goal_state,) if self.goal_state is not None else ()))
+
+
+def read_material(path: Path) -> bytes:
+    # This operator-supplied text enters the Controller context once per admission.
+    with path.open("rb") as stream:
+        data = stream.read(128 * 1024 + 1)
+    if len(data) > 128 * 1024:
+        raise ValueError("Controller material exceeds 128 KiB")
+    data.decode("utf-8")
+    return data
+
+
+def role_policy(role, host, capture):
+    project = host.project
+    writable = role == "worker" and host.sandbox != "read-only"
     context = {
         "kind": "project_workspace", "workspace_path": str(project), "project_ref": digest(str(project))[:24],
         "audience": "local_owner", "grant": "workspace_write" if writable else "workspace_read",
@@ -55,29 +85,21 @@ def role_policy(role, project, env, capture):
     config = identity["host_config"]
     filesystem = config["permissions"][profile]["filesystem"]
     fs = filesystem[":workspace_roots"]
-    for name in (".codex", ".loopx", ".git", "ACTIVE_GOAL_STATE.md"):
-        fs[name] = "deny"
-    for key in ("LOOPX_RUNTIME_ROOT", "LOOPX_REGISTRY", "CODEX_HOME", "LOOPX_SHARED_SKILLS", "LOOPX_WAKE_LOG_DIR"):
-        path = Path(env[key]).resolve()
+    for path in host.protected:
         if project.is_relative_to(path):
-            raise ValueError("worker task root overlaps private trial state")
+            raise ValueError("worker workspace overlaps private Host state")
         if path.is_relative_to(project):
             fs[str(path.relative_to(project))] = "deny"
         else:
             filesystem[str(path)] = "deny"
     if role == "controller" and capture is not None:
         filesystem[str(capture)] = "read"
-    if role == "controller" and env.get("LOOPX_TASK_DOC"):
-        # The benchmark operator stages the public task separately on some hosts.
-        task = Path(env["LOOPX_TASK_DOC"]).resolve(strict=True)
-        if task.is_file() and not task.is_relative_to(project):
-            filesystem[str(task)] = "read"
     return profile, config
 
 
 class RoleTransport:
-    def __init__(self, rpc, project, env, deadline, admission, evidence, save, capture=None):
-        self.rpc, self.project, self.env = rpc, project, env
+    def __init__(self, rpc, host, deadline, admission, evidence, save, capture=None):
+        self.rpc, self.host = rpc, host
         self.deadline, self.admission = deadline, admission
         self.evidence, self.save = evidence, save
         self.capture = capture
@@ -95,12 +117,12 @@ class RoleTransport:
         return self.rpc.request(method, params)
 
     def start(self, role):
-        cwd = str(self.project)
+        cwd = str(self.host.project)
         effective = self.request("config/read", {"cwd": cwd, "includeLayers": False})["config"]
         config = {"web_search": "disabled", "project_doc_max_bytes": 0, "skills": {"include_instructions": False}}
-        params = {"cwd": cwd, "runtimeWorkspaceRoots": [cwd], "model": self.env["MODEL_NAME"],
+        params = {"cwd": cwd, "runtimeWorkspaceRoots": [cwd], "model": self.host.model,
                   "approvalPolicy": "never"}
-        profile, policy = role_policy(role, self.project, self.env, self.capture)
+        profile, policy = role_policy(role, self.host, self.capture)
         config.update(policy)
         self.permissions[role] = profile
         params["permissions"] = profile
@@ -108,7 +130,7 @@ class RoleTransport:
                               "hooks": False, "browser_use": False, "computer_use": False,
                               "goals": False, "js_repl": False}
         params["config"] = disable_mcp_servers(effective, config)
-        with self.admission.launch_lifetime(operation="benchmark_role_thread_start"):
+        with self.admission.launch_lifetime(operation="turn_role_thread_start"):
             observed = self.request("thread/start", params)
         thread = observed["thread"]["id"]
         if (not isinstance(thread, str) or not thread or thread in self.threads.values()
@@ -123,12 +145,12 @@ class RoleTransport:
         if role not in self.threads:
             self.start(role)
         thread = self.threads[role]
-        params = {"threadId": thread, "cwd": str(self.project),
+        params = {"threadId": thread, "cwd": str(self.host.project),
                   "input": [{"type": "text", "text": prompt}], "outputSchema": schema,
-                  "effort": self.env["REASONING_EFFORT"], "approvalPolicy": "never"}
+                  "effort": self.host.effort, "approvalPolicy": "never"}
         params["permissions"] = self.permissions[role]
         began = time.monotonic()
-        with self.admission.launch_lifetime(operation="benchmark_role_turn_start"):
+        with self.admission.launch_lifetime(operation="turn_role_turn_start"):
             started = self.request("turn/start", params)
         turn = started["turn"]["id"]
         if not isinstance(turn, str) or not turn:
@@ -144,7 +166,7 @@ class RoleTransport:
             while True:
                 event = self.rpc.next_event(timeout_sec=min(1, self.remaining()))
                 if time.monotonic() >= next_check:
-                    with self.admission.launch_lifetime(operation="benchmark_role_continue"):
+                    with self.admission.launch_lifetime(operation="turn_role_continue"):
                         pass
                     next_check = time.monotonic() + 1
                 if not event:
@@ -195,7 +217,7 @@ class RoleTransport:
             self.save()
 
 
-def run_roles(native, request):
+def run_roles(native, request, material=None):
     prompt, result_schema = prepare_codex_cli_input(request)
     decision_schema = object_schema({"instruction": {"type": ["string", "null"]},
                                      "result": {"anyOf": [result_schema, {"type": "null"}]}})
@@ -204,6 +226,8 @@ def run_roles(native, request):
                "Keep Core protocol and private control context here. Assess the returned finding and artifacts. "
                "Give actionable feedback if another work segment is needed. Fill exactly one of instruction or result. "
                "Return the typed Turn result when ready. At most three Worker segments share this admission.")
+    if material is not None:
+        prompt += "\nOperator-supplied task material:\n" + material
     for index in range(4):
         decision = native.send("controller", prompt, decision_schema)
         instruction, result = decision.get("instruction"), decision.get("result")
@@ -236,26 +260,39 @@ def interrupt_on_stop():
         signal.signal(signal.SIGTERM, previous)
 
 
-def serve(request, env):
+def serve(request, host):
     if request.get("schema_version") != COMPLETE_TURN_HOST_REQUEST_SCHEMA:
         raise ValueError("controller-worker requires a complete C1 Turn request")
     identity = extract_turn_work_identity(request)
-    if (identity["goal_id"], identity["agent_id"]) != (env["LOOPX_GOAL_ID"], env["LOOPX_AGENT_ID"]):
-        raise ValueError("controller-worker trial identity mismatch")
-    project = Path(env["LOOPX_PROJECT"]).resolve()
-    runtime = Path(env["LOOPX_RUNTIME_ROOT"]).resolve()
+    project, runtime = host.project, host.runtime
     key = request["turn_key"]
     journal = turn_journal_path(runtime, goal_id=identity["goal_id"], turn_key=key)
     capture = journal.parent / "decisions" / journal.name
     reference = request.get("detail_ref", {}).get("captured_decision", {})
     if reference.get("path") != str(capture) or capture.resolve(strict=True) != capture:
         raise ValueError("original Turn decision capture unavailable")
-    path = runtime / "benchmark-role-attempts" / journal.name
-    timeout = float(env["LOOPX_ROLE_TIMEOUT_SECONDS"])
+    from loopx.registry import find_registry_goal, load_registry, resolve_state_file
+
+    goal = find_registry_goal(load_registry(host.registry), identity["goal_id"])
+    if not goal:
+        raise ValueError("Controller-worker requires its original registered Goal")
+    state = resolve_state_file(Path(goal["repo"]), goal.get("state_file"))
+    host = replace(host, goal_state=state.resolve() if state else None)
+    material = None
+    if host.material is not None:
+        source = host.material.resolve(strict=True)
+        if not source.is_file() or any(source.is_relative_to(path) for path in host.protected):
+            raise ValueError("Controller material overlaps protected state or is not a file")
+        data = read_material(source)
+        if hashlib.sha256(data).hexdigest() != host.material_sha256:
+            raise ValueError("Controller material changed after admission")
+        material = data.decode("utf-8")
+    path = journal.parent / "controller-worker" / journal.name
+    timeout = host.timeout
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("controller-worker requires a finite execution budget")
     deadline = time.monotonic() + timeout
-    admission = FirstPartyHostGoalAdmission.for_plan(registry_path=Path(env["LOOPX_REGISTRY"]),
+    admission = FirstPartyHostGoalAdmission.for_plan(registry_path=host.registry,
         goal_id=identity["goal_id"], planned_goal_ref=request.get("goal_ref"))
     with try_exclusive_file_lock(path) as lock:
         if lock is None:
@@ -265,26 +302,48 @@ def serve(request, env):
             if prior.get("input_sha256") == digest(request) and isinstance(prior.get("result"), dict):
                 return prior["result"]
             raise RuntimeError("original role attempt requires reconciliation")
+        # Test the selected executable and workspace sandbox before paid inference.
+        # Turn supervision also enforces the outer deadline over this preflight.
+        probe = subprocess.run([host.codex_bin, "sandbox", "-P", ":workspace", "--",
+                                sys.executable, "-I", "-c", "pass"], cwd=project,
+                               capture_output=True, timeout=min(15, timeout))
+        if probe.returncode:
+            raise RuntimeError("Native Codex workspace sandbox is unavailable")
         evidence = {"turn_key": key, "input_sha256": digest(request), "threads": {}, "steps": []}
         def save():
             atomic_write_private_json(path, evidence)
-            # Wakes are collected before SForge removes the guest. Keep the
-            # result and retry state in the adapter's original private store.
-            observation = {key: evidence[key] for key in ("turn_key", "threads", "steps")}
-            atomic_write_private_json(Path(env["LOOPX_ROLE_OBSERVATION"]), observation)
         save()
-        with interrupt_on_stop(), StdioNativeGoalTransport.spawn(
-            [env["CODEX_BIN"], "app-server", "--listen", "stdio://"], cwd=str(project), env=env,
+        with StdioNativeGoalTransport.spawn(
+            [host.codex_bin, "app-server", "--listen", "stdio://"], cwd=str(project), env=os.environ.copy(),
         ) as rpc:
-            native = RoleTransport(rpc, project, env, deadline, admission, evidence, save, capture)
-            native.request("initialize", {"clientInfo": {"name": "loopx_benchmark", "version": "1"},
+            native = RoleTransport(rpc, host, deadline, admission, evidence, save, capture)
+            native.request("initialize", {"clientInfo": {"name": "loopx_turn", "version": "1"},
                                          "capabilities": {"experimentalApi": True}})
             rpc.notify("initialized", {})
-            result = run_roles(native, request)
+            result = run_roles(native, request, material)
         evidence["result"] = result
         save()
         return result
 
 
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ("project", "runtime", "registry"):
+        parser.add_argument(f"--{name}", type=Path, required=True)
+    parser.add_argument("--codex-bin", default="codex")
+    parser.add_argument("--model")
+    parser.add_argument("--effort")
+    parser.add_argument("--sandbox", choices=("read-only", "workspace-write", "danger-full-access"), required=True)
+    parser.add_argument("--timeout", type=float, required=True)
+    parser.add_argument("--material", type=Path)
+    parser.add_argument("--material-sha256")
+    args = parser.parse_args()
+    home = Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser().resolve()
+    host = RoleHost(args.project.resolve(), args.runtime.resolve(), args.registry.resolve(), home,
+                    args.codex_bin, args.model, args.effort, args.sandbox, args.timeout, args.material, args.material_sha256)
+    with interrupt_on_stop():
+        print(json.dumps(serve(json.load(sys.stdin), host), ensure_ascii=False))
+
+
 if __name__ == "__main__":
-    print(json.dumps(serve(json.load(sys.stdin), os.environ), ensure_ascii=False))
+    main()

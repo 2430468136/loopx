@@ -1485,7 +1485,10 @@ def _prepare_host_invocation(
         raise ValueError("run-once accepts either host_argv or host_runner, not both")
     if host_runner is None:
         argv = normalize_host_argv(host_argv or [])
-        return argv, {"executable": Path(argv[0]).name, "argv_count": len(argv)}
+        projection: dict[str, str | int] = {"executable": Path(argv[0]).name, "argv_count": len(argv)}
+        if (plan.get("host") or {}).get("topology") == "controller-worker":
+            projection.update(kind="codex-cli", topology="controller-worker")
+        return argv, projection
     planned_host = plan.get("host") if isinstance(plan.get("host"), dict) else {}
     return None, {"executable": "built-in", "kind": str(planned_host.get("kind") or "codex-cli")}
 
@@ -1634,6 +1637,9 @@ def run_loopx_turn_once(
                 ):
                     pass
             if recorded_plan is not None:
+                requested_host, original_host = plan.get("host") or {}, recorded_plan.get("host") or {}
+                if any(requested_host.get(k) != original_host.get(k) for k in ("topology", "topology_config_sha256")):
+                    raise ValueError("Recovery requires the original Turn topology and Host configuration")
                 # Recovery uses the recorded source through Host dispatch,
                 # cached-result validation and settlement.
                 plan, request = recorded_plan, build_loopx_turn_host_request(recorded_plan)

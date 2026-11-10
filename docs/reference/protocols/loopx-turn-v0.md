@@ -77,6 +77,38 @@ document, knowledge-maintenance, and other long-running workflows. The agent
 CLI remains responsible for model and tool execution; it does not become the
 authority for goal state or completion.
 
+## Select the Controller and Worker on a headless Turn
+
+Any caller with a registered Goal, an admitted Todo, a Codex CLI with native
+workspace sandbox support and an independent validator can select the product's
+Controller–Worker provider. From the same configured registry and runtime:
+
+```sh
+loopx turn plan --goal-id GOAL --agent-id AGENT --host codex-cli \
+  --execution-mode isolated-headless --topology controller-worker
+loopx turn run-once --execute --prepare-selected-todo --goal-id GOAL --agent-id AGENT \
+  --project "$PWD" --host codex-cli --execution-mode isolated-headless \
+  --topology controller-worker --timeout-seconds 300 --codex-sandbox workspace-write \
+  --validation-command-json '["./check-work"]'
+```
+
+The default single-worker path keeps its existing Host and session policy.
+The dual provider opens two fresh native threads per admission. The Controller
+reads the captured decision, delegates task work and assesses the return. The
+Worker has the caller's workspace grant capped at workspace write. The optional
+`--controller-material FILE` delivers one operator-supplied UTF-8 task file (up to 128 KiB) to the Controller, pinned by digest.
+Core retains selection, leases, validation, Spend and the original journal.
+The result identifies its topology. Resume the same Turn with its original Host
+configuration. Switch topology on a new Turn. Missing native sandbox support
+prevents role inference. Role IDs, causal steps and usage are in the original
+Goal's private `turns/controller-worker/` record.
+
+The reference provider uses a separately launched Codex App Server. A caller
+able to run the headless Turn may use it from a CLI, scheduler or external Host.
+An interactive Codex App heartbeat or an existing Chat/Steward connection owns
+its current conversation. Adopting this profile there requires an authorized
+secondary execution surface and result return to the original conversation.
+
 ## Generic Agent CLI Quick Start
 
 An agent CLI does not need native LoopX support. It needs a thin host adapter

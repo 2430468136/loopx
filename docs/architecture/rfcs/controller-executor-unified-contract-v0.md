@@ -1010,6 +1010,13 @@ and claim receipt check. Turn rereads the same Todo before dispatch after a
 claim. The shared Turn path owns validation, acknowledgement and spend for both
 topologies. The original heartbeat transport remains available as a control.
 
+Controller–Worker execution belongs to the public Turn Host boundary. Use
+`loopx turn plan|run-once --host codex-cli --execution-mode isolated-headless --topology controller-worker`
+with the caller's own registered Goal. EdgeBench is one consumer of this same
+provider. Core pins topology and Host configuration on the original journal.
+The current provider starts an independent native server. Reusing an interactive
+Codex App or Chat connection requires its own thread ownership and result-return contract.
+
 The `turn-controller-worker` research arm uses the same public Turn entry,
 validator and quota owner as `turn-resume`. Its v1 Host opens two distinct
 native Codex threads per admission. The Controller receives the captured
@@ -1050,7 +1057,12 @@ path in public work evidence. Native grading observed the artifact while Core
 correctly withheld settlement. A retry of the original Turn now supplies receipt
 correction feedback. The benchmark reserves one corrective Host attempt before
 launch and holds a second rejection. A lost reply reads back the original
-journal. Evidence still passes the original public boundary and task validator.
+journal. Evidence still passes the original public boundary and task validator. A repeat on the
+same public case reached the same 80% pass rate in 602 seconds and consumed
+1.624M native tokens against the reference's 1.614M. Its evaluator-selected
+score was lower and its active Turn had not settled at cutoff. This run leaves
+outcome parity open. Direct CLI and benchmark callers independently qualified
+the product provider's two-role feedback and one-spend path on a controlled model.
 
 **Then switch topology at new Turn admission.** The target is one profile choice
 for the same captured work on either governed entry. Single worker is the

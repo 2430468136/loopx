@@ -14,6 +14,37 @@ from typing import Any, cast
 from ..control_plane.goals.first_party_host_admission import FirstPartyHostGoalAdmission
 
 
+def controller_worker_launch(args, registry: Path, runtime: Path) -> tuple[list[str], str]:
+    """Bind the product's isolated native provider to the caller's Turn configuration."""
+    import hashlib
+    import math
+    import os
+    import sys
+
+    if args.timeout_seconds is None or not math.isfinite(args.timeout_seconds) or args.timeout_seconds <= 0:
+        raise ValueError("controller-worker execution requires a finite positive --timeout-seconds")
+    project = Path(args.project).expanduser().resolve()
+    argv = [sys.executable, "-P", "-m", "loopx.control_plane.turn_driver.controller_worker",
+            "--project", str(project), "--registry", str(registry.resolve()), "--runtime", str(runtime.resolve()),
+            "--codex-bin", args.codex_bin, "--sandbox", args.codex_sandbox]
+    for option, value in (("--model", args.codex_model), ("--effort", args.codex_reasoning_effort)):
+        if value is not None:
+            argv.extend([option, value])
+    material = getattr(args, "controller_material", None)
+    if material is not None:
+        from ..control_plane.turn_driver.controller_worker import read_material
+
+        source = material.expanduser().resolve(strict=True)
+        if not source.is_file():
+            raise ValueError("Controller material must be a regular UTF-8 file")
+        argv.extend(["--material", str(source), "--material-sha256", hashlib.sha256(read_material(source)).hexdigest()])
+    # The deadline may shrink on recovery. Model, permissions, workspace and
+    # private binding paths belong to the original admission.
+    home = str(Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser().resolve())
+    key = hashlib.sha256(json.dumps([home, *argv]).encode()).hexdigest()
+    return [*argv, "--timeout", str(args.timeout_seconds)], key
+
+
 def prepare_turn_host_request(
     args: argparse.Namespace, payload: Mapping[str, Any], *,
     native_host_runner: Callable[..., dict[str, Any]] | None,

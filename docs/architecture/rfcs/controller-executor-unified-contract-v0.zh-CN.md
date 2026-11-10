@@ -824,6 +824,11 @@ quota 负责选任务并生成普通 claim 的类型化动作。原生 heartbeat
 及 claim 回执校验。领取后，Turn 重读同一个 Todo，确认可交付才派发。两种拓扑都由
 同一 Turn 路径完成独立验证、确认和配额结算。原 heartbeat 传输保留用于对照。
 
+Controller–Worker 属于公开 Turn Host 边界。任何调用方都可对自己的已注册 Goal 使用
+`loopx turn plan|run-once --host codex-cli --execution-mode isolated-headless --topology controller-worker`。
+EdgeBench 是同一 provider 的一个消费者。Core 在原 journal 上固定拓扑和 Host 配置。
+当前 provider 启动独立原生服务；复用 Codex App 或 Chat 的现有连接，还需由该连接管理线程归属和结果返回。
+
 实验臂 `turn-controller-worker` 与 `turn-resume` 共用公开 Turn 入口、独立验证器和
 quota owner。v1 Host 在一次准入内打开两个不同的原生 Codex 会话。Controller 读取捕获的
 决策和任务材料，向 Worker 下发有界指令。Worker 在工作区权限下读写产物并返回发现。
@@ -850,7 +855,10 @@ Todo，给出相同准备要求和主要动作。Turn 若内联原本要求读�
 一次真实试验中，Host 反复在公开工作证据中返回同一私有临时路径。原生评测能读取产物，
 Core 正确拒绝结算。现在重试原 Turn 会携带回执修正反馈；benchmark 在启动前登记一次
 修正机会，再次被拒绝就停止自动派发。修正回包丢失时回读原 journal。证据仍须通过原有
-公开边界检查和独立任务验证。
+公开边界检查和独立任务验证。同题复测中，两侧都运行约 602 秒，最高通过率均为 80%；Turn 的原生
+token 为 162.4 万，对照为 161.4 万。Turn 被评测选中的分数仍较低，到期时正在执行的 Turn
+尚未结算，因此效果打平仍待验证。直接 CLI 与 benchmark 已在受控模型上分别验证同一产品
+provider 的双角色反馈和单次配额结算。
 
 **在新 Turn 准入时切换拓扑。** 目标是两种受治理入口针对同一份捕获的工作使用同一个
 模式选择。单 worker 是兼容默认值。可选模式下，一个 Controller 消费 Core 上下文，

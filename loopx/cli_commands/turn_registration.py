@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import json
 from collections.abc import Callable
 
@@ -169,6 +170,13 @@ def register_turn_commands(
         execution_mode_choices=["isolated-headless"],
         default_execution_mode="isolated-headless",
     )
+    for entry in (plan, run_once):
+        entry.set_defaults(iteration_context=None)
+        entry.add_argument("--topology", choices=("single-worker", "controller-worker"),
+                           default="single-worker",
+                           help="Execute with one Host session or a Controller and Worker on an isolated codex-cli Host.")
+    run_once.add_argument("--controller-material", type=Path,
+                          help="An additional UTF-8 task file for the Controller (up to 128 KiB, pinned at admission).")
     run_once.add_argument("--project", required=True)
     run_once.add_argument("--prepare-selected-todo", action="store_true",
         help="On fresh execution, perform quota’s authorized ordinary claim and reread the same Todo before dispatch.")

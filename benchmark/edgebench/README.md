@@ -193,6 +193,10 @@ A rejected Host result permits one automatic receipt correction on the original
 Turn. A second contract rejection stops the scheduler and retains the pending
 transaction for explicit repair. A lost corrective reply permits journal
 readback without another automatic model attempt.
+The benchmark passes the topology to the public Turn provider. Other callers use
+`loopx turn run-once --host codex-cli --execution-mode isolated-headless --topology controller-worker`
+with their own project, Goal, validator and phase budget.
+
 Use the same task, validator and model with `--worker turn-controller-worker` to
 run two fresh native Codex threads inside the admitted Turn. The Controller can
 read the captured contract, its original decision and the task. It gives the Worker
@@ -212,7 +216,7 @@ entry from the effective treatment. During fresh execution, `--prepare-selected-
 lets Turn perform the exact ordinary claim supplied by quota and reread the same
 Todo before dispatch. Existing native heartbeat consumes the same claim contract.
 
-The private wake directory contains `roles.json` with native thread and turn IDs,
+The original Turn’s private `turns/controller-worker/` record includes role evidence with native thread and turn IDs,
 message digests, step wall time and reported cumulative token use per thread.
 For role cost, take the last cumulative count for each thread once. A missing
 count remains unknown. Include planning, validation, retries, idle time and

@@ -150,9 +150,8 @@ def test_turn_arm_settles_only_independently_validated_original_work(tmp_path, m
             assert corrected["turn_repair_required"] and not corrected["ok"]
             assert json.loads(pending.read_text())["correction_started"]
             assert fixture["_quota_spend_count"](runtime) == 0
-            saved = sorted(wake_logs.glob("*/receipt.json"))
-            subprocess.run(command, cwd=project, env=env, capture_output=True, timeout=30, check=True)
-            assert sorted(wake_logs.glob("*/receipt.json")) == saved
+            readback = tick()
+            assert readback["turn_repair_required"] and not readback["turn_execution"]["effects"]["host_invoked"]
         assert workspace_marker.read_text() == fixture["_marker_value"](2)
         return
     if not lose_reply:
