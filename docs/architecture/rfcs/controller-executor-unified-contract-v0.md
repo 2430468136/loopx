@@ -1045,6 +1045,13 @@ and end-to-end elapsed times, cumulative input/cache/output tokens and actual
 spends separately when repeating this comparison. Qualification requires
 comparable accepted outcomes and complete costs across repeated cases.
 
+In one live treatment the Host repeatedly returned the same private scratch
+path in public work evidence. Native grading observed the artifact while Core
+correctly withheld settlement. A retry of the original Turn now supplies receipt
+correction feedback. The benchmark reserves one corrective Host attempt before
+launch and holds a second rejection. A lost reply reads back the original
+journal. Evidence still passes the original public boundary and task validator.
+
 **Then switch topology at new Turn admission.** The target is one profile choice
 for the same captured work on either governed entry. Single worker is the
 compatibility default. In the opt-in profile one Controller consumes Core

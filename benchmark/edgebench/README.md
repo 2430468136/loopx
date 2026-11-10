@@ -189,6 +189,10 @@ original journal by Goal, Agent and wake identity. A committed replay produces
 no Host invocation or additional spend. Missing or conflicting history holds
 the wake for reconciliation. Retain the original trial state while diagnosing
 a failure. To return to heartbeat, select `heartbeat-resume` for a new trial.
+A rejected Host result permits one automatic receipt correction on the original
+Turn. A second contract rejection stops the scheduler and retains the pending
+transaction for explicit repair. A lost corrective reply permits journal
+readback without another automatic model attempt.
 Use the same task, validator and model with `--worker turn-controller-worker` to
 run two fresh native Codex threads inside the admitted Turn. The Controller can
 read the captured contract, its original decision and the task. It gives the Worker

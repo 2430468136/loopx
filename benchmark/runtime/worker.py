@@ -305,11 +305,11 @@ def turn_command(
     execution: Execution,
     turn_id: str,
     resume_turn_key: str | None = None,
-    *, recover_instance: bool = False,
+    *, recover_instance: bool = False, retry_failed: bool = True,
 ) -> list[str]:
     address = ["--turn-instance-id", turn_id]
     if resume_turn_key:
-        address = ["--resume-turn-key", resume_turn_key, "--retry-failed-turn"]
+        address = ["--resume-turn-key", resume_turn_key, *(["--retry-failed-turn"] if retry_failed else [])]
     elif recover_instance:
         address = ["--resume-turn-instance-id", turn_id, "--retry-failed-turn"]
     host = ["--host", "codex-cli", "--session-scope", "agent",
@@ -709,6 +709,7 @@ def run_once(env: dict[str, str]) -> dict:
                                 process_evidence_path=wake / "native-process.json")
             else:
                 pending = {}
+                retry_failed = True
                 if execution.mode == "turn" and stage == "execute":
                     from loopx.file_lock import try_exclusive_file_lock
 
@@ -717,6 +718,15 @@ def run_once(env: dict[str, str]) -> dict:
                         raise RuntimeError("Another benchmark wake owns the pending Turn")
                     pending = pending_turn(pending_path, turn_id, execution)
                     receipt["turn_instance_id"] = pending["turn_instance_id"]
+                    if pending.get("validation_stage") == "host_result_contract":
+                        from loopx.control_plane.runtime.document_io import atomic_write_private_json
+
+                        # Reserve a single corrective Host call on the original journal.
+                        # A lost reply after reservation permits readback only.
+                        retry_failed = not pending.get("correction_started", False)
+                        if retry_failed:
+                            pending["correction_started"] = True
+                            atomic_write_private_json(pending_path, pending)
                     if execution.controller_worker:
                         if execution.timeout_seconds is None:
                             raise ValueError("controller-worker requires a finite Turn or phase deadline")
@@ -728,7 +738,7 @@ def run_once(env: dict[str, str]) -> dict:
                         execution,
                         pending["turn_instance_id"],
                         pending.get("resume_turn_key"),
-                        recover_instance=pending["turn_instance_id"] != turn_id,
+                        recover_instance=pending["turn_instance_id"] != turn_id, retry_failed=retry_failed,
                     )
                     if execution.mode == "turn" and stage == "execute"
                     else native_command(env, execution, stage, wake, session_wake)
@@ -785,6 +795,12 @@ def run_once(env: dict[str, str]) -> dict:
                         # Product recovery owns eligibility and retry limits.
                         # Never disguise a failed transaction as a fresh Turn.
                         pending["resume_turn_key"] = result["resume_turn_key"]
+                        if pending.get("correction_started"):
+                            # Any returned failure on the reserved correction requires
+                            # repair. Lost replies still read back the original journal.
+                            receipt["turn_repair_required"] = True
+                        elif result.get("validation_stage") == "host_result_contract":
+                            pending["validation_stage"] = "host_result_contract"
                         from loopx.control_plane.runtime.document_io import atomic_write_private_json
 
                         atomic_write_private_json(pending_path, pending)
@@ -838,10 +854,10 @@ def main() -> int:
     print(json.dumps(receipt))
     if receipt.get("native_goal_outcome") == "cancelled":
         return 130
-    if receipt.get("budget_exhausted") and receipt["mode"] in {"heartbeat", "turn"}:
-        from benchmark.runtime.scheduler import BUDGET_EXHAUSTED_EXIT_CODE
+    if (receipt.get("budget_exhausted") or receipt.get("turn_repair_required")) and receipt["mode"] in {"heartbeat", "turn"}:
+        from benchmark.runtime.scheduler import WAKE_REQUESTED_STOP_EXIT_CODE
 
-        return BUDGET_EXHAUSTED_EXIT_CODE
+        return WAKE_REQUESTED_STOP_EXIT_CODE
     return 124 if receipt["timed_out"] else (0 if receipt["ok"] else 1)
 
 

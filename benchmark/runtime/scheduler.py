@@ -14,7 +14,8 @@ import time
 
 # Private process transport between the benchmark wake and its shell scheduler.
 # The benchmark worker remains the owner of phase-budget exhaustion.
-BUDGET_EXHAUSTED_EXIT_CODE = 75
+WAKE_REQUESTED_STOP_EXIT_CODE = 75
+BUDGET_EXHAUSTED_EXIT_CODE = WAKE_REQUESTED_STOP_EXIT_CODE
 PHASE_WORK_RESERVE_SECONDS = 160
 
 
@@ -361,7 +362,7 @@ def worker_command(env: dict[str, str], *, python: str, source: str,
         "--runtime-profile", "generic_cli", "--goal-id", env["LOOPX_GOAL_ID"],
         "--agent-id", env["LOOPX_AGENT_ID"], "--state-file", state_file,
         "--wake-cmd", "exec " + shlex.join(wake),
-        "--wake-stop-exit-code", str(BUDGET_EXHAUSTED_EXIT_CODE),
+        "--wake-stop-exit-code", str(WAKE_REQUESTED_STOP_EXIT_CODE),
         "--wake-timeout-seconds", str(host_timeout + 150),
         "--quota-timeout-seconds", "30", "--error-backoff-seconds", "15",
         *(["--wake-host-failure"] if env["LOOPX_EXECUTION_MODE"] == "heartbeat" else []),

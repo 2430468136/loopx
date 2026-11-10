@@ -1743,6 +1743,16 @@ def run_loopx_turn_once(
             )
             if receipt.get("failed_phase") == "validation":
                 if validation_reinvokes_host:
+                    if journal.get("validation_stage") == "host_result_contract":
+                        # Feedback is about the previous response, outside the immutable
+                        # work contract. Never send rejected private values back on this wire.
+                        request = {**request, "result_contract": {
+                            **request["result_contract"],
+                            "correction": "The previous result failed the Host result contract. "
+                            "Read back existing work and correct its structured receipt. "
+                            "Use public-safe artifact names and observed checks in evidence. "
+                            "Keep private locations and raw output in the workspace.",
+                        }}
                     journal.pop("host_result", None)
                 journal.pop("result_kind", None)
                 journal["completed_phases"] = (
