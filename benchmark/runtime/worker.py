@@ -293,8 +293,7 @@ def pending_turn(path: Path, turn_id: str, execution: Execution) -> dict:
     pending = read_json(path.read_text())
     if pending.get("turn_topology") != validator.get("turn_topology"):
         raise ValueError("Pending Turn requires its original worker topology")
-    if ("validation_argv_sha256" in pending
-            and pending["validation_argv_sha256"] != validator["validation_argv_sha256"]):
+    if pending.get("validation_argv_sha256") != validator["validation_argv_sha256"]:
         raise ValueError("Pending Turn requires its original validation command")
     return pending
 

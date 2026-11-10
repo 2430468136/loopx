@@ -187,7 +187,9 @@ and settles the original transaction within the same trial budget.
 A lost reply leaves a private pending marker. The next Turn wake looks up the
 original journal by Goal, Agent and wake identity. A committed replay produces
 no Host invocation or additional spend. Missing or conflicting history holds
-the wake for reconciliation. Retain the original trial state while diagnosing
+the wake for reconciliation. Older markers without a validator digest also
+require reconciliation against the original validator; the current command
+cannot establish that history. Retain the original trial state while diagnosing
 a failure. To return to heartbeat, select `heartbeat-resume` for a new trial.
 A rejected Host result permits one automatic receipt correction on the original
 Turn. A second contract rejection stops the scheduler and retains the pending
