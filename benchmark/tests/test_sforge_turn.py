@@ -6,6 +6,7 @@ import runpy
 import shlex
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -89,6 +90,8 @@ def test_turn_arm_settles_only_independently_validated_original_work(tmp_path, m
         "LOOPX_CODEX_HOME": str(tmp_path / "codex-home"), "LOOPX_SHARED_SKILLS": str(skills),
         "LOOPX_WAKE_LOG_DIR": str(wake_logs), "LOOPX_CODEX_SANDBOX": "workspace-write",
         "OPENAI_BASE_URL": "http://127.0.0.1:1/v1", "OPENAI_API_KEY": "fixture",
+        # The real CLI must still validate or recover with less than the former 160s reserve.
+        "LOOPX_PHASE_DEADLINE_EPOCH": str(time.time() + 120),
         "CODEX_BIN": str(codex), "LOOPX_USAGE_PING": "0",
     }
     command = worker_command(env, python=sys.executable, source=str(src),

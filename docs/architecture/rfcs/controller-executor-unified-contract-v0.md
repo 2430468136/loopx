@@ -1031,6 +1031,16 @@ case, but the guest tool backend failed before producing an accepted artifact.
 The cold dual-role entry now probes native sandbox execution before inference.
 The local scores and different native tool architectures do not qualify a topology default.
 
+Standard heartbeat sets the reference phase clock. Both governed topologies
+use the same remaining budget through planning, admission and Host execution,
+including the final 160 seconds. An exhausted phase stops new dispatch. A
+deadline during a Turn keeps its original transaction available for recovery.
+On the same SQLite Goal, quota and Turn must agree on the selected Todo,
+required preparation and primary work with a missing, owned or foreign lease.
+When Turn inlines a required Goal read, it must deliver the complete canonical
+text before work. Compare native outcomes, elapsed time, usage and committed
+work on the same task with these settings fixed.
+
 **Then switch topology at new Turn admission.** The target is one profile choice
 for the same captured work on either governed entry. Single worker is the
 compatibility default. In the opt-in profile one Controller consumes Core

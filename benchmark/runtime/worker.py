@@ -614,14 +614,11 @@ def run_once(env: dict[str, str]) -> dict:
             receipt["recovery_handoff_sha256"] = handoff["sha256"]
         if stage == "execute" and env.get("LOOPX_PHASE_DEADLINE_EPOCH"):
             remaining = float(env["LOOPX_PHASE_DEADLINE_EPOCH"]) - time.time()
-            # Heartbeat work uses the whole remaining phase. Cleanup is bounded
-            # by its existing host transport, not subtracted from each wake.
-            # Native Goal and managed-turn transports retain their own reserve.
             reserve = phase_work_reserve(execution.mode)
             if remaining <= reserve:
                 receipt.update(ok=True, budget_exhausted=True, host_invoked=False)
                 return receipt
-            if execution.mode == "heartbeat":
+            if reserve == 0:
                 phase_work_deadline = float(env["LOOPX_PHASE_DEADLINE_EPOCH"])
             execution = replace(
                 execution, timeout_seconds=(remaining - reserve if execution.timeout_seconds is None

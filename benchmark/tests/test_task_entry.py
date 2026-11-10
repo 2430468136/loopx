@@ -752,7 +752,7 @@ def test_pending_turn_prevents_phase_input_replacement(tmp_path, monkeypatch):
         )
 
 
-def test_late_scheduler_wake_does_not_open_an_unfinishable_turn(planning_env, monkeypatch):
+def test_expired_scheduler_wake_does_not_open_a_turn(planning_env, monkeypatch):
     from benchmark.runtime import worker
 
     env = planning_env | {
@@ -760,7 +760,7 @@ def test_late_scheduler_wake_does_not_open_an_unfinishable_turn(planning_env, mo
         "LOOPX_TASK_STAGE": "execute",
         "LOOPX_VALIDATION_COMMAND_JSON": '["python", "check.py"]',
         "LOOPX_CODEX_TURN_TIMEOUT_SEC": "60",
-        "LOOPX_PHASE_DEADLINE_EPOCH": "260",
+        "LOOPX_PHASE_DEADLINE_EPOCH": "100",
     }
     monkeypatch.setattr(worker.time, "time", lambda: 100)
     monkeypatch.setattr(worker, "prepare_codex_home", lambda *a, **kw: pytest.fail("late wake must not launch a host"))
@@ -771,6 +771,27 @@ def test_late_scheduler_wake_does_not_open_an_unfinishable_turn(planning_env, mo
     assert not (Path(env["LOOPX_RUNTIME_ROOT"]) / "benchmark-pending-turn.json").exists()
 
 
+def test_turn_interrupts_inflight_cli_at_phase_deadline(planning_env, tmp_path):
+    cli = tmp_path / "sleeping-cli"
+    pid_file = tmp_path / "invoked"
+    cli.write_text(
+        f"#!{sys.executable}\nimport os, pathlib, time\n"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid()))\ntime.sleep(90)\n"
+    )
+    cli.chmod(0o755)
+    receipt = run_once(planning_env | {
+        "LOOPX_EXECUTION_MODE": "turn", "LOOPX_TASK_STAGE": "execute",
+        "LOOPX_CLI": str(cli), "LOOPX_VALIDATION_COMMAND_JSON": '["validator"]',
+        "LOOPX_CODEX_TURN_TIMEOUT_SEC": "60", "LOOPX_PHASE_DEADLINE_EPOCH": str(time.time() + 2),
+    })
+    assert receipt["budget_exhausted"] and receipt["timed_out"] and not receipt["ok"]
+    assert "turn_execution" not in receipt
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
+    pending = Path(planning_env["LOOPX_RUNTIME_ROOT"]) / "benchmark-pending-turn.json"
+    assert json.loads(pending.read_text())["turn_instance_id"] == receipt["turn_id"]
+
+
 @pytest.mark.parametrize("mode", ["heartbeat", "turn", "plain", "native-goal", "loopx-goal"])
 def test_real_scheduler_stops_after_one_budget_exhausted_wake(planning_env, mode):
     from benchmark.runtime.scheduler import worker_command
@@ -778,7 +799,7 @@ def test_real_scheduler_stops_after_one_budget_exhausted_wake(planning_env, mode
     env = planning_env | {
         "LOOPX_EXECUTION_MODE": mode, "LOOPX_TASK_STAGE": "execute",
         "LOOPX_TASK_ENTRY": "seeded-todo",
-        "LOOPX_PHASE_DEADLINE_EPOCH": str(time.time() + (0 if mode == "heartbeat" else 100)),
+        "LOOPX_PHASE_DEADLINE_EPOCH": str(time.time() + (0 if mode in {"heartbeat", "turn"} else 100)),
     }
     if mode == "turn":
         env["LOOPX_VALIDATION_COMMAND_JSON"] = '["python", "check.py"]'

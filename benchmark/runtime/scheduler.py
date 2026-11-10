@@ -19,8 +19,8 @@ PHASE_WORK_RESERVE_SECONDS = 160
 
 
 def phase_work_reserve(mode: str) -> int:
-    """Heartbeat cleanup must not consume the remaining solver allowance."""
-    return 0 if mode == "heartbeat" else PHASE_WORK_RESERVE_SECONDS
+    """Governed wakes share the phase clock through dispatch and cancellation."""
+    return 0 if mode in {"heartbeat", "turn"} else PHASE_WORK_RESERVE_SECONDS
 
 
 def _physical_state(path: Path) -> Path:

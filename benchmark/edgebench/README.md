@@ -156,8 +156,9 @@ planned task entry and one Agent-scoped Codex session by default. Turn sends
 the captured work to the Host, runs the validator and settles through Core.
 For a comparison, freeze both source revisions, task, feedback, model, effort
 and effective solve time. Heartbeat's native context delivery defaults on.
-Turn uses its product Host request and reserves 160 seconds for managed cleanup.
-Allow for that difference when choosing the phase budget.
+Turn uses its product Host request. Both workers use the remaining phase time
+for planning, admission and execution. Turn also runs its required validator
+and settles the original transaction within the same trial budget.
 
 A lost reply leaves a private pending marker. The next Turn wake looks up the
 original journal by Goal, Agent and wake identity. A committed replay produces
@@ -451,8 +452,8 @@ qualification runs. The shared Harbor defaults are unchanged. Native task
 internet policy is retained. Each attempt requires a new output directory.
 
 Heartbeat and native Goal workers have no independent per-call time limit.
-The shared worker uses the remaining trial budget, retaining 160 seconds for
-startup/cleanup; natural completion determines continuation boundaries. A second
+Heartbeat and Turn can use the entire remaining trial budget. Native Goal
+retains a 160-second reserve. Natural completion determines continuation boundaries. A second
 scheduler wake alone does not prove resume: verify another actual model
 invocation with the same session identity. Native Goal owns its continuation
 without an outer resume loop. Heartbeat profiles now also disable SForge outer
