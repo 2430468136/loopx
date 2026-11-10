@@ -12,16 +12,22 @@ import time
 import pytest
 
 from loopx.control_plane.turn_driver import controller_worker as roles
+from loopx.file_lock import try_exclusive_file_lock
+from tests.control_plane.host_process_fixture import write_python_host_fixture
 
 
 def test_revoked_role_drains_silent_exec_process(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
-    pid_file = project / "pid"
-    binary = tmp_path / "codex"
-    binary.write_text(f"#!{sys.executable}\nimport os,pathlib,time\n"
-                      "pathlib.Path('pid').write_text(str(os.getpid()))\ntime.sleep(45)\n")
-    binary.chmod(0o700)
+    binary = write_python_host_fixture(tmp_path / "codex", f"""#!{sys.executable}
+from pathlib import Path
+import time
+from loopx.file_lock import try_exclusive_file_lock
+with try_exclusive_file_lock(Path('active-role')) as lock:
+    assert lock is not None
+    Path('started').touch()
+    time.sleep(45)
+""")
     monkeypatch.setattr(roles, "role_cli_options", lambda *args: ())
 
     class Admission:
@@ -36,8 +42,9 @@ def test_revoked_role_drains_silent_exec_process(tmp_path, monkeypatch):
     native = roles.RoleTransport(host, time.monotonic() + 10, Admission(), state, lambda: None)
     with pytest.raises(InterruptedError, match="operator stop"):
         native.send("worker", "check", {})
-    with pytest.raises(ProcessLookupError):
-        os.kill(int(pid_file.read_text()), 0)
+    assert (project / "started").is_file()
+    with try_exclusive_file_lock(project / "active-role") as lock:
+        assert lock is not None
     assert len(state["steps"]) == 1 and state["steps"][0]["thread_token_usage_total"] is None
 
 
@@ -55,7 +62,7 @@ def test_worker_can_iterate_until_the_host_deadline(monkeypatch):
         instruction = next(reports, None)
         return {"instruction": instruction, "result": None if instruction else {"result_kind": "validated_progress"}}
 
-    monkeypatch.setattr(roles, "prepare_codex_cli_input", lambda _: ("task", {}))
+    monkeypatch.setattr(roles, "prepare_codex_controller_input", lambda _: ("task", {}))
     monkeypatch.setattr(roles, "normalize_codex_result", lambda _, result: result)
     result = roles.run_roles(SimpleNamespace(send=send), {})
     assert result["result_kind"] == "validated_progress" and worker_inputs == instructions
@@ -149,7 +156,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
             index -= 1
         inputs.append(text)
         if index == 1:
-            contract = json.loads(text.split("Turn request:\n")[1].split("\nYou are the Controller.")[0])
+            contract, _ = json.JSONDecoder().raw_decode(text.split("Turn request:\n", 1)[1])
             key = contract["turn_key"]
             answer = {"instruction": "Inspect the observation.", "result": None}
         elif index in (2, 5):
@@ -243,6 +250,8 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
         assert completed.returncode == 0, completed.stdout[-2200:] + completed.stderr[-500:]
     assert not (project / "controller-write-probe").exists()
     assert not (tmp_path / "mcp-started").exists()
+    assert "For your Core receipt:" in inputs[3]
+    assert not any("For your Core receipt:" in inputs[i] for i in (0, 1, 4, 6))
     assert inputs[1] == "Inspect the observation."
     assert inputs[4] == "Copy the checked observation into the output file."
     assert len(inputs) == (8 if entry == "receipt-repair" else 7) and "Copy the checked observation" in inputs[4]

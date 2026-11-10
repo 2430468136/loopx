@@ -24,7 +24,7 @@ from loopx.control_plane.quota.turn_envelope import COMPLETE_TURN_HOST_REQUEST_S
 from loopx.control_plane.runtime.document_io import atomic_write_private_json
 from loopx.control_plane.turn_driver.codex_cli import (
     CodexFailureObservation, _codex_command, codex_cli_event_session_id, codex_cli_result_schema,
-    normalize_codex_result, prepare_codex_cli_input,
+    codex_receipt_instructions, normalize_codex_result, prepare_codex_controller_input,
 )
 from loopx.control_plane.turn_driver.host_process_transport import HostOutputLines, run_host_process
 from loopx.control_plane.turn_driver.decision_capture import read_turn_observation_text
@@ -267,14 +267,9 @@ class RoleTransport:
 
 
 def run_roles(native, request, material=None):
-    prompt, result_schema = prepare_codex_cli_input(request)
+    prompt, result_schema = prepare_codex_controller_input(request)
     decision_schema = object_schema({"instruction": {"type": ["string", "null"]},
                                      "result": {"anyOf": [result_schema, {"type": "null"}]}})
-    prompt += ("\nYou are the Controller. The Host verified the captured decision and included it in work_contract. "
-               "Give the Worker the task objective, success criteria and relevant material in instruction. "
-               "Leave the approach to the Worker unless the task specifies it. Use the returned evidence to "
-               "decide whether further work would help or to submit the typed Turn result. "
-               "Set exactly one of instruction and result.")
     if material is not None:
         prompt += "\nOperator-supplied task material:\n" + material
     worker_returned = False
@@ -294,8 +289,10 @@ def run_roles(native, request, material=None):
                 or not isinstance(returned.get("artifacts"), list)
                 or not all(isinstance(path, str) for path in returned["artifacts"])):
             raise ValueError("worker returned an invalid report")
-        worker_returned = True
         prompt = "Worker return:\n" + json.dumps(returned, ensure_ascii=False)
+        if not worker_returned:
+            prompt += "\nFor your Core receipt:\n" + "\n".join(codex_receipt_instructions())
+        worker_returned = True
 
 
 @contextmanager
@@ -371,7 +368,7 @@ def serve(request, host):
     reference = request.get("detail_ref", {}).get("captured_decision", {})
     if reference.get("path") != str(capture) or capture.resolve(strict=True) != capture:
         raise ValueError("original Turn decision capture unavailable")
-    # prepare_codex_cli_input validates the complete contract and its source hash.
+    # The Codex input preparation validates the complete contract and its source hash.
     # Compare the actual journal bytes as JSON before attesting that the inline
     # work_contract is the original. Neither role needs access to private Core files.
     if digest(json.loads(read_turn_observation_text(capture))) != digest(request["work_contract"]):
