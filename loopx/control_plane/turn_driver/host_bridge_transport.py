@@ -9,6 +9,7 @@ import subprocess
 import sys as _sys
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 # Keep the historical exports and caller patch points, but select the OS
@@ -50,6 +51,7 @@ class GuardedHostBridge:
         assert process.stdout is not None
         self.output = process.stdout
         self.process, self.deadline, self.cleanup_timeout = process, deadline, cleanup_timeout
+        self.next_running_check = time.monotonic() + 1
         self.pending: queue.Queue[str | BaseException | None] = queue.Queue(maxsize=1)
         self._stop_reading = threading.Event()
         self.requested = self.cancelled = self.not_launched = False
@@ -73,11 +75,23 @@ class GuardedHostBridge:
         finally:
             self._publish(None)
 
-    def next(self, *, deadline: float | None = None) -> dict[str, Any] | None:
-        try:
-            item = self.pending.get(timeout=None if deadline is None else max(0, deadline - time.monotonic()))
-        except queue.Empty:
-            raise TimeoutError("managed Host bridge launch deadline expired") from None
+    def next(self, *, deadline: float | None = None,
+             check_running: Callable[[], None] | None = None) -> dict[str, Any] | None:
+        # A launch/cleanup deadline always belongs to its existing owner.
+        # After spawn, recheck admission even while there are no output frames.
+        while True:
+            cutoff = deadline
+            if deadline is None and check_running is not None:
+                if time.monotonic() >= self.next_running_check:
+                    check_running()
+                    self.next_running_check = time.monotonic() + 1
+                cutoff = self.next_running_check
+            try:
+                item = self.pending.get(timeout=None if cutoff is None else max(0, cutoff - time.monotonic()))
+                break
+            except queue.Empty:
+                if deadline is not None:
+                    raise TimeoutError("managed Host bridge launch deadline expired") from None
         if isinstance(item, BaseException):
             raise item
         if item is None:

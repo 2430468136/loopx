@@ -372,19 +372,12 @@ def run_host_process(
             else:
                 proc.stdin.write(frame)
                 proc.stdin.flush()
-            next_check = time.monotonic() + 1
             while True:
-                if guarded is not None and launch_deadline is None and check_running is not None and result is None:
-                    if time.monotonic() >= next_check:
-                        check_running()
-                        next_check = time.monotonic() + 1
-                    try:
-                        event = guarded.next(deadline=next_check)
-                    except TimeoutError:
-                        continue
+                if guarded is not None:
+                    event = guarded.next(deadline=launch_deadline, check_running=check_running if result is None else None)
                 else:
-                    event = (guarded.next(deadline=launch_deadline) if guarded is not None
-                             else json.loads(line) if (line := next(proc.stdout, None)) is not None else None)
+                    line = next(proc.stdout, None)
+                    event = json.loads(line) if line is not None else None
                 if event is None:
                     break
                 kind = event.get("kind")
