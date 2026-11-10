@@ -123,10 +123,12 @@ def role_cli_options(role, host, timeout):
     if not isinstance(servers, list) or not all(isinstance(row, dict) and isinstance(row.get("name"), str)
                                                and row["name"] for row in servers):
         raise ValueError("invalid Codex CLI tool inventory")
-    # A table replacement would remove required native command/url fields.
-    # Override each enabled leaf in place, including names containing dots.
+    # Codex validates each CLI-layer transport before merging with lower
+    # layers. Supply a complete disabled entry without importing account
+    # commands, URL headers or environment into the process arguments.
+    config["mcp_servers"] = {row["name"]: {"enabled": False, "command": sys.executable,
+                                            "args": ["-I", "-c", "pass"]} for row in servers}
     overrides = [key + "=" + toml_value(value) for key, value in config.items()]
-    overrides.extend("mcp_servers." + json.dumps(row["name"]) + ".enabled=false" for row in servers)
     return ("--ignore-rules", *(arg for override in overrides for arg in ("-c", override)))
 
 
