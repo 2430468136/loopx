@@ -4,7 +4,7 @@
 
 - **RFC 状态：** 已接受，适用于既有契约。Router 与绑定单元扩展待评审。
 - **替代 / 关闭：** 无
-- **交付成熟度：** 本次实现 benchmark 单 worker 入口。统一双会话及产品采用仍待实现。
+- **交付成熟度：** EdgeBench 已可在同一 C1 Turn 下选择单 Worker 或隔离的 Controller–Worker。跨 Turn 会话延续、效果对照和产品接入仍待验收。
 - **作者 / 负责人：** LoopX 维护者、控制面与运行时 owner
 - **创建日期：** 2026-10-27
 - **最近规范性修订：** 2026-11-10
@@ -818,6 +818,20 @@ scheduler 调用 `quota should-run` 决定是否唤醒。Heartbeat 投递精简�
 Turn 调用 `loopx turn run-once`，验证工作区产物并在原 attempt 上结算。原生 judge
 负责评分。先在同一任务上对照这两条路径，再改变契约或会话拓扑。入口和参数见
 [worker 使用说明](../../../benchmark/edgebench/README.md#worker-profiles)。
+
+heartbeat 实验入口可用 `--turn-topology` 显式选择任一受治理拓扑，并固定验证器。
+quota 负责选任务并生成普通 claim 的类型化动作。原生 heartbeat 与公开 Turn 共用动作解码
+及 claim 回执校验。领取后，Turn 重读同一个 Todo，确认可交付才派发。两种拓扑都由
+同一 Turn 路径完成独立验证、确认和配额结算。原 heartbeat 传输保留用于对照。
+
+实验臂 `turn-controller-worker` 与 `turn-resume` 共用公开 Turn 入口、独立验证器和
+quota owner。v1 Host 在一次准入内打开两个不同的原生 Codex 会话。Controller 读取捕获的
+决策和任务材料，向 Worker 下发有界指令。Worker 在工作区权限下读写产物并返回发现。
+Controller 可据此修改下一步指令，再向 Core 提交一份类型化结果。任务分数仍由原生 judge
+决定。适配器在待恢复的工作上固定拓扑，记录原生身份和各角色累计 token 用量，执行归属不明时
+保留现场。相比[此前的双角色原型](https://github.com/loopx-project/loopx/pull/7615)，本实现
+复用原 Turn journal 和独立验收。跨准入的会话恢复、同条件成果与完整成本对照，以及
+Managed Host、Chat、Steward 的产品验收仍待完成。
 
 **在新 Turn 准入时切换拓扑。** 目标是两种受治理入口针对同一份捕获的工作使用同一个
 模式选择。单 worker 是兼容默认值。可选模式下，一个 Controller 消费 Core 上下文，

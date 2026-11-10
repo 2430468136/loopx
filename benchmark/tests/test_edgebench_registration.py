@@ -32,7 +32,8 @@ def native_cli(tmp_path, monkeypatch):
     return run, args, tmp_path / "runs/run/fixture"
 
 
-@pytest.mark.parametrize("profile", ["official", "single", "native-goal", "heartbeat-resume", "heartbeat-explore"])
+@pytest.mark.parametrize("profile", ["official", "single", "native-goal", "heartbeat-resume", "heartbeat-explore",
+                                      "turn-resume", "turn-controller-worker"])
 @pytest.mark.parametrize("custom_registration", [False, True])
 def test_native_cli_prepares_registration_for_every_profile(native_cli, monkeypatch,
                                                            profile, custom_registration):
@@ -49,7 +50,7 @@ def test_native_cli_prepares_registration_for_every_profile(native_cli, monkeypa
     def backend(**kwargs):
         assert kwargs.get("feedback") is None and kwargs.get("checkpoint") is None
         constructed.update(kwargs)
-        result = SimpleNamespace(image_exists=lambda image: True, feedback=None, checkpoint=None)
+        result = SimpleNamespace(observe_local_images=lambda **keys: {}, image_exists=lambda image: True, feedback=None, checkpoint=None)
 
         def options(provider):
             assert provider is native_provider
@@ -85,7 +86,8 @@ def test_native_cli_prepares_registration_for_every_profile(native_cli, monkeypa
     monkeypatch.setattr(run, "RecordingDockerBackend", backend)
     monkeypatch.setattr(run, "run_agent", native_provider)
     with pytest.raises(RuntimeError, match="synthetic worker boundary"):
-        run.main([*args, "--worker", profile])
+        run.main([*args, "--worker", profile, *(["--validation-command-json", '["check"]']
+                 if profile.startswith("turn-") else [])])
     if custom_registration:
         assert events == ["prepare", "register", "bind"]
     else:
@@ -107,11 +109,12 @@ def test_registration_preparation_failure_prevents_native_admission(native_cli, 
         raise RuntimeError("synthetic registration unavailable")
 
     monkeypatch.setattr(run, "RecordingDockerBackend", lambda **kwargs: SimpleNamespace(
-        image_exists=lambda image: True, registration_options=prepare))
+        observe_local_images=lambda **keys: {}, image_exists=lambda image: True, registration_options=prepare))
     monkeypatch.setattr(run, "run_agent", lambda **kwargs:
                         pytest.fail("failed preparation must prevent registration and all worker effects"))
     with pytest.raises(RuntimeError, match="synthetic registration unavailable"):
-        run.main([*args, "--worker", profile])
+        run.main([*args, "--worker", profile, *(["--validation-command-json", '["check"]']
+                 if profile.startswith("turn-") else [])])
     assert events == ["prepare"]
     receipt = json.loads((trial / "runtime-receipt.json").read_text())
     assert receipt["status"] == "runner_failed" and receipt["error_kind"] == "RuntimeError"

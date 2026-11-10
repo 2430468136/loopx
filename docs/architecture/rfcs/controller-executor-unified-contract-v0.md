@@ -4,7 +4,7 @@
 
 - **RFC status:** Accepted, existing contract. Router and binding-unit extensions are proposed.
 - **Supersedes / closes:** none
-- **Delivery maturity:** Benchmark single-worker entry implemented in this change. Unified dual-session and product adoption remain proposed.
+- **Delivery maturity:** EdgeBench can select single-worker and isolated Controller–Worker execution under the same C1 Turn. Cross-Turn role continuity, comparative benefit and product adoption remain open.
 - **Authors / owners:** LoopX maintainers; control-plane and runtime owners
 - **Created:** 2026-10-27
 - **Last normative revision:** 2026-11-10
@@ -1002,6 +1002,27 @@ Turn invokes `loopx turn run-once`, validates the workspace result, and settles
 the captured attempt. The native judge owns the score. Compare these paths on the
 same case before changing the contract or session topology. The adapters and
 profile settings are in the [worker guide](../../../benchmark/edgebench/README.md#worker-profiles).
+
+The heartbeat study entry can select either governed topology explicitly with
+`--turn-topology` and a pinned validator. Quota owns selection and the typed
+ordinary claim. The native heartbeat and public Turn share its action decoder
+and claim receipt check. Turn rereads the same Todo before dispatch after a
+claim. The shared Turn path owns validation, acknowledgement and spend for both
+topologies. The original heartbeat transport remains available as a control.
+
+The `turn-controller-worker` research arm uses the same public Turn entry,
+validator and quota owner as `turn-resume`. Its v1 Host opens two distinct
+native Codex threads per admission. The Controller receives the captured
+decision and task material. Its Worker receives scoped instructions, reads or
+writes task artifacts under workspace permissions, and returns findings. The
+Controller can use a finding to change the next instruction before returning
+one typed result to Core. The existing judge still determines the task score.
+The adapter pins the topology on pending work, records native IDs and cumulative
+per-role usage, and holds ambiguous attempts. This revisits the predecessor
+[dual-role prototype](https://github.com/loopx-project/loopx/pull/7615) using
+the original Turn journal and independent validation. Cross-admission resume,
+a matched outcome/cost comparison, and Managed Host, Chat and Steward
+qualification remain open.
 
 **Then switch topology at new Turn admission.** The target is one profile choice
 for the same captured work on either governed entry. Single worker is the

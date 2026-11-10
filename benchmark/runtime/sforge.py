@@ -51,7 +51,8 @@ def profile_execution(profile, *, task_entry=None, context_delivery=None,
     if profile not in PROFILE_MODES:
         raise ValueError("Unknown benchmark worker profile")
     return Execution(
-        mode=PROFILE_MODES[profile], controller_worker=profile == "turn-controller-worker", task_entry=task_entry, context_delivery=context_delivery,
+        mode=PROFILE_MODES[profile], controller_worker=profile == "turn-controller-worker",
+        task_entry=task_entry, context_delivery=context_delivery,
         turn_envelope=turn_envelope, native_child_limit=native_child_limit,
         validation_command=() if validation_command is None else validation_command,
     )
@@ -175,20 +176,20 @@ class SForgeWorker(CodexAgent):
             if type(replan_after_todos) is not int or not 1 <= replan_after_todos <= 5:
                 raise ValueError("replan_after_todos must be an integer between 1 and 5")
             if not self.execution.uses_loopx:
-                raise ValueError("replan_after_todos requires a heartbeat profile or turn-resume")
+                raise ValueError("replan_after_todos requires a heartbeat profile or a Turn profile")
         if replan_after_turns is not None:
             if (type(replan_after_turns) is not int or
                     not 1 <= replan_after_turns <= 6):
                 raise ValueError("replan_after_turns must be an integer between 1 and 6")
             if not self.execution.uses_loopx:
-                raise ValueError("replan_after_turns requires a heartbeat profile or turn-resume")
+                raise ValueError("replan_after_turns requires a heartbeat profile or a Turn profile")
         if (replan_after_turns is None and replan_after_todos is None
                 and self.execution.uses_loopx):
             replan_after_turns = DEFAULT_REPLAN_AFTER_TURNS
         self.replan_after_turns = replan_after_turns
         self.replan_after_todos = replan_after_todos
         if stride_strategy is not None and not self.execution.uses_loopx:
-            raise ValueError("stride_strategy requires a heartbeat profile or turn-resume")
+            raise ValueError("stride_strategy requires a heartbeat profile or a Turn profile")
         if stride_strategy is not None:
             from loopx.control_plane.work_items.stride_policy_codec import normalize_stride_strategy
             stride_strategy = normalize_stride_strategy(stride_strategy)
@@ -196,7 +197,7 @@ class SForgeWorker(CodexAgent):
             if not isinstance(planning_horizon_goal, bool):
                 raise ValueError("planning_horizon_goal must be a boolean")
             if not self.execution.uses_loopx:
-                raise ValueError("planning_horizon_goal requires a heartbeat profile or turn-resume")
+                raise ValueError("planning_horizon_goal requires a heartbeat profile or a Turn profile")
         self.planning_horizon_goal = (
             DEFAULT_PLANNING_HORIZON_GOAL if planning_horizon_goal is None and self.execution.uses_loopx
             else planning_horizon_goal

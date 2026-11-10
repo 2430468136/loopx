@@ -271,8 +271,24 @@ def handle_turn_command(
             scheduler_context = decision_owner.scheduler_execution_context
             decision = compose_turn_decision(decision_owner.resolve(), scheduler_execution_context=scheduler_context)
             resume_requested, session_binding = resolve_turn_resume_session_binding(args)
-            if native_execution_preparer is not None and args.turn_command == "run-once" and args.execute:
-                prepared_todo = native_execution_preparer(decision)
+            if args.turn_command == "run-once" and args.execute and (
+                native_execution_preparer is not None or getattr(args, "prepare_selected_todo", False)
+            ):
+                if native_execution_preparer is not None:
+                    prepared_todo = native_execution_preparer(decision)
+                else:
+                    from ..control_plane.turn_driver.execution_preparation import prepare_selected_turn_todo
+
+                    if delegated_context is not None:
+                        raise ValueError("delegated work requires its own scoped lease")
+                    if strict_goal_admission is not None:
+                        strict_goal_admission.require_current()
+                    prepared_todo = prepare_selected_turn_todo(
+                        decision, goal_id=args.goal_id, agent_id=args.agent_id,
+                        selected_todo_id=getattr(args, "todo_id", None), turn_instance_id=args.turn_instance_id,
+                        registry_path=registry_path, runtime_root=runtime_root, cwd=Path(args.project).resolve(),
+                        timeout=min(args.timeout_seconds or 30, 30),
+                    )
                 if prepared_todo is not None:
                     # Host preparation changes canonical lease state. Plan and
                     # settle against a fresh read of the same Turn and Todo.

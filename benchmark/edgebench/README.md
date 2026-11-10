@@ -136,7 +136,7 @@ its own image provenance, and a later retag can change what gets launched.
 ## Worker profiles
 
 The worker profiles are `official`, `single`, `native-goal`, `heartbeat-resume`,
-`heartbeat-explore`, and `turn-resume`. `official` uses SForge's Codex Stop
+`heartbeat-explore`, `turn-resume`, and `turn-controller-worker`. `official` uses SForge's Codex Stop
 hook and outer recovery. `single` executes once with neither. `native-goal` uses
 the shared native Codex Goal transport. The heartbeat profiles use the shared
 LoopX scheduler and resume store. `heartbeat-explore` additionally enables the
@@ -164,7 +164,35 @@ original journal by Goal, Agent and wake identity. A committed replay produces
 no Host invocation or additional spend. Missing or conflicting history holds
 the wake for reconciliation. Retain the original trial state while diagnosing
 a failure. To return to heartbeat, select `heartbeat-resume` for a new trial.
-The Controller–Worker profile and its matched comparison are specified in the
+Use the same task, validator and model with `--worker turn-controller-worker` to
+run two fresh native Codex threads inside the admitted Turn. The Controller can
+read the captured contract, its original decision and the task. It gives the Worker
+a task brief, reviews the finding and artifact paths, and can give corrective
+instructions to the same Worker. The adapter allows up to three Worker segments
+in one admission. Worker tools run under a named workspace permission with no
+network or access to the trial's Core state. A narrower caller sandbox still applies.
+The guest needs a Codex App Server with named filesystem permissions and a kernel
+that can enforce them. An unsupported sandbox holds the affected work.
+
+From the heartbeat trial entry, specify `--worker heartbeat-resume --turn-topology
+single-worker` or `--worker heartbeat-resume --turn-topology controller-worker` and
+supply the same validator. Both use the existing heartbeat scheduler, quota decision
+and public Turn transaction. The unqualified heartbeat profile keeps its native
+context transport for baseline comparisons. Receipts distinguish the requested
+entry from the effective treatment. During fresh execution, `--prepare-selected-todo`
+lets Turn perform the exact ordinary claim supplied by quota and reread the same
+Todo before dispatch. Existing native heartbeat consumes the same claim contract.
+
+The private wake directory contains `roles.json` with native thread and turn IDs,
+message digests, step wall time and reported cumulative token use per thread.
+For role cost, take the last cumulative count for each thread once. A missing
+count remains unknown. Include planning, validation, retries, idle time and
+operator interventions in a matched comparison. Cold trials accept
+`--container-cpus N` (default 4) for both work and judge containers and record it
+in the runtime settings. Use the same CPU limit across compared arms.
+The trial's Goal, pending identity, original decision and validator survive a
+lost acknowledgement. Roles start fresh for the next admitted Turn. The
+longer-lived role binding and matched comparison are specified in the
 [delivery RFC](../../docs/architecture/rfcs/controller-executor-unified-contract-v0.md#controller-delivery-cadence).
 
 All profiles use the same explicitly staged Codex binary and model/effort. This

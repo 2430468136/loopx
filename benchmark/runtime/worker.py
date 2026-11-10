@@ -325,6 +325,7 @@ def turn_command(
         "run-once",
         "--execute",
         "--no-global-sync",
+        "--prepare-selected-todo",
         *host,
         "--project",
         env["LOOPX_PROJECT"],
@@ -723,6 +724,7 @@ def run_once(env: dict[str, str]) -> dict:
                         if execution.timeout_seconds is None:
                             raise ValueError("controller-worker requires a finite Turn or phase deadline")
                         env["LOOPX_ROLE_TIMEOUT_SECONDS"] = str(execution.timeout_seconds)
+                        env["LOOPX_ROLE_OBSERVATION"] = str(wake / "roles.json")
                 command = (
                     turn_command(
                         env,

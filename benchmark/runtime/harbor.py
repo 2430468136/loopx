@@ -308,6 +308,11 @@ class BenchmarkCodex(CodexOffline):
             ),
             timeout_sec=180,
         )
+        if self.execution.mode == "turn":
+            # Core protects the pending Turn marker's parent. Mode 0777 on a
+            # root-owned directory still forbids the guest user from chmod.
+            owner = shlex.quote(str(environment.default_user or "root"))
+            await self.exec_as_root(environment, command=f"chown {owner} {_LOOPX_RUNTIME} && chmod 0700 {_LOOPX_RUNTIME}")
         actual_commit = await self._stage_source(environment, loopx_src)
         await stage_portable_python(environment, _PYTHON)
         if self.execution.uses_loopx:

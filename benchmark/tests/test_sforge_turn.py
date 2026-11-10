@@ -14,6 +14,8 @@ from benchmark.runtime.scheduler import worker_command
 
 @pytest.mark.parametrize("args", [
     ["--worker", "turn-resume"],
+    ["--worker", "turn-controller-worker"],
+    ["--worker", "turn-controller-worker", "--validation-command-json", '["check"]', "--container-cpus", "0"],
     ["--worker", "turn-resume", "--validation-command-json", '"shell text"'],
     ["--worker", "turn-resume", "--validation-command-json", '[""]'],
     ["--worker", "single", "--validation-command-json", '["validator"]'],

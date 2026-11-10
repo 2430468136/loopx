@@ -714,7 +714,7 @@ class StewardTurnHost:
 
         def prepare_native_task(decision: Mapping[str, Any]) -> str | None:
             nonlocal managed_lease, managed_lease_request, preparation_status
-            from ...control_plane.turn_driver.codex_execution_preparation import compact_execution_preparation_request
+            from ...control_plane.turn_driver.execution_preparation import compact_execution_preparation_request
 
             preparation = compact_execution_preparation_request(decision)
             if preparation is None:

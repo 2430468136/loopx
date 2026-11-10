@@ -93,6 +93,18 @@ class Execution:
         return self.mode in {"native-goal", "loopx-goal"}
 
 
+def governed_worker_profile(profile, topology):
+    if topology is None:
+        return profile
+    if profile not in {"heartbeat-resume", "turn-resume", "turn-controller-worker"}:
+        raise ValueError("explicit Turn topology requires a plain governed heartbeat or Turn profile")
+    if topology == "controller-worker":
+        return "turn-controller-worker"
+    if topology == "single-worker" and profile != "turn-controller-worker":
+        return "turn-resume"
+    raise ValueError("unsupported or conflicting Turn topology")
+
+
 def turn_envelope_receipt(*, explicit: bool) -> dict:
     """Record only the explicit display opt-in; checkpoint capture is independent."""
     if explicit:

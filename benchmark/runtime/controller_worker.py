@@ -40,7 +40,7 @@ WORK_REPORT = object_schema({"finding": {"type": "string"},
                              "artifacts": {"type": "array", "items": {"type": "string"}}})
 
 
-def role_policy(role, project, env):
+def role_policy(role, project, env, capture):
     # Start from the same workspace-only native permission owner as project
     # conversations. Preserve the guest's task root and exclude Core state.
     writable = role == "worker" and env["LOOPX_CODEX_SANDBOX"] != "read-only"
@@ -49,7 +49,8 @@ def role_policy(role, project, env):
         "audience": "local_owner", "grant": "workspace_write" if writable else "workspace_read", "filesystem_scope": "workspace_only"}})
     profile = identity["permissions_profile"]
     config = identity["host_config"]
-    fs = config["permissions"][profile]["filesystem"][":workspace_roots"]
+    filesystem = config["permissions"][profile]["filesystem"]
+    fs = filesystem[":workspace_roots"]
     for name in (".codex", ".loopx", ".git", "ACTIVE_GOAL_STATE.md"):
         fs[name] = "deny"
     for key in ("LOOPX_RUNTIME_ROOT", "LOOPX_REGISTRY", "CODEX_HOME", "LOOPX_SHARED_SKILLS", "LOOPX_WAKE_LOG_DIR"):
@@ -58,19 +59,24 @@ def role_policy(role, project, env):
             raise ValueError("worker task root overlaps private trial state")
         if path.is_relative_to(project):
             fs[str(path.relative_to(project))] = "deny"
+        else:
+            filesystem[str(path)] = "deny"
+    if role == "controller" and capture is not None:
+        filesystem[str(capture)] = "read"
     if role == "controller" and env.get("LOOPX_TASK_DOC"):
         # The benchmark operator stages the public task separately on some hosts.
         task = Path(env["LOOPX_TASK_DOC"]).resolve(strict=True)
         if task.is_file() and not task.is_relative_to(project):
-            config["permissions"][profile]["filesystem"][str(task)] = "read"
+            filesystem[str(task)] = "read"
     return profile, config
 
 
 class RoleTransport:
-    def __init__(self, rpc, project, env, deadline, admission, evidence, save):
+    def __init__(self, rpc, project, env, deadline, admission, evidence, save, capture=None):
         self.rpc, self.project, self.env = rpc, project, env
         self.deadline, self.admission = deadline, admission
         self.evidence, self.save = evidence, save
+        self.capture = capture
         self.threads = {}
         self.permissions = {}
 
@@ -90,7 +96,7 @@ class RoleTransport:
         config = {"web_search": "disabled", "project_doc_max_bytes": 0, "skills": {"include_instructions": False}}
         params = {"cwd": cwd, "runtimeWorkspaceRoots": [cwd], "model": self.env["MODEL_NAME"],
                   "approvalPolicy": "never"}
-        profile, policy = role_policy(role, self.project, self.env)
+        profile, policy = role_policy(role, self.project, self.env, self.capture)
         config.update(policy)
         self.permissions[role] = profile
         params["permissions"] = profile
@@ -162,7 +168,6 @@ class RoleTransport:
                     if not isinstance(result, dict):
                         raise ValueError("invalid native role result")
                     step["output_sha256"] = digest(result)
-                    self.save()
                     return result
         except BaseException:
             # Cancellation must also work while the Controller has no model
@@ -230,8 +235,12 @@ def serve(request, env):
     project = Path(env["LOOPX_PROJECT"]).resolve()
     runtime = Path(env["LOOPX_RUNTIME_ROOT"]).resolve()
     key = request["turn_key"]
-    name = turn_journal_path(runtime, goal_id=identity["goal_id"], turn_key=key).name
-    path = runtime / "benchmark-role-attempts" / name
+    journal = turn_journal_path(runtime, goal_id=identity["goal_id"], turn_key=key)
+    capture = journal.parent / "decisions" / journal.name
+    reference = request.get("detail_ref", {}).get("captured_decision", {})
+    if reference.get("path") != str(capture) or capture.resolve(strict=True) != capture:
+        raise ValueError("original Turn decision capture unavailable")
+    path = runtime / "benchmark-role-attempts" / journal.name
     timeout = float(env["LOOPX_ROLE_TIMEOUT_SECONDS"])
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("controller-worker requires a finite execution budget")
@@ -249,11 +258,15 @@ def serve(request, env):
         evidence = {"turn_key": key, "input_sha256": digest(request), "threads": {}, "steps": []}
         def save():
             atomic_write_private_json(path, evidence)
+            # Wakes are collected before SForge removes the guest. Keep the
+            # result and retry state in the adapter's original private store.
+            observation = {key: evidence[key] for key in ("turn_key", "threads", "steps")}
+            atomic_write_private_json(Path(env["LOOPX_ROLE_OBSERVATION"]), observation)
         save()
         with interrupt_on_stop(), StdioNativeGoalTransport.spawn(
             [env["CODEX_BIN"], "app-server", "--listen", "stdio://"], cwd=str(project), env=env,
         ) as rpc:
-            native = RoleTransport(rpc, project, env, deadline, admission, evidence, save)
+            native = RoleTransport(rpc, project, env, deadline, admission, evidence, save, capture)
             native.request("initialize", {"clientInfo": {"name": "loopx_benchmark", "version": "1"},
                                          "capabilities": {"experimentalApi": True}})
             rpc.notify("initialized", {})

@@ -355,6 +355,12 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
             if key in receipt:
                 for target in ("runner", "worker_profile"):
                     config[target][key] = receipt[key]
+        if "requested_worker" in receipt:
+            from benchmark.runtime.codex import governed_worker_profile
+            requested = receipt["requested_worker"]
+            if governed_worker_profile(requested, receipt.get("turn_topology", "single-worker")) != receipt["worker"]:
+                raise ValueError("Requested entry disagrees with governed Turn topology")
+            config["runner"]["requested_worker"] = requested
         if "container_cpus" in receipt:
             if type(receipt["container_cpus"]) is not int or receipt["container_cpus"] < 1:
                 raise ValueError("Invalid runtime container CPU limit")
