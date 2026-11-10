@@ -109,6 +109,11 @@ def toml_value(value):
 
 def role_cli_options(role, host, timeout):
     _, config = role_policy(role, host)
+    if role == "worker" and host.sandbox != "read-only":
+        # Shell here-documents, compilers and tempfile users need scratch space.
+        # Use the existing write grant; the shared system temp directory stays denied.
+        config["shell_environment_policy"].setdefault("set", {}).update(
+            TMPDIR=str(host.project), TMP=str(host.project), TEMP=str(host.project))
     config.update(approval_policy="never", features={
         "apps": False, "multi_agent": False, "multi_agent_v2": False, "hooks": False, "plugins": False,
         "remote_plugin": False, "browser_use": False, "computer_use": False, "goals": False, "js_repl": False,
@@ -320,6 +325,8 @@ def prepare_role_attempt(path, journal, request):
     if (planned.get("retry_failed") is not True or planned.get("reinvoke_host") is not True
             or planned.get("resume_from") != "host_execute" or (audit.get("actual") or {}).get("status") != "started"):
         raise RuntimeError("original Turn has no authorized Host retry")
+    if evidence.get("transport") != "codex-exec":
+        raise RuntimeError("original role transport requires reconciliation")
     correction = {"input_sha256": request_hash}
     evidence["correction"] = correction
     return evidence, correction

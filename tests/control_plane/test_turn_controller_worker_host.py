@@ -77,6 +77,13 @@ def test_correction_readback_never_starts_another_uncertain_or_completed_attempt
     }}))
     with pytest.raises(RuntimeError, match="original role attempt"):
         roles.prepare_role_attempt(path, journal, {**recovery, "work_contract": {"todo": "other"}})
+    historical = dict(evidence)
+    del historical["transport"]
+    path.write_text(json.dumps(historical))
+    assert roles.prepare_role_attempt(path, journal, request)[1]["result"] == historical["result"]
+    with pytest.raises(RuntimeError, match="original role transport"):
+        roles.prepare_role_attempt(path, journal, recovery)
+    path.write_text(json.dumps(evidence))
     evidence, correction = roles.prepare_role_attempt(path, journal, recovery)
     path.write_text(json.dumps(evidence))
     with pytest.raises(RuntimeError, match="correction requires reconciliation"):
@@ -109,6 +116,14 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
         nonlocal key
         text = [part["text"] for item in request["input"] if item.get("role") == "user"
                 for part in item["content"] if "text" in part][-1]
+        if index == 4:
+            return {"type": "function_call", "id": "fc_readonly", "call_id": "call_readonly",
+                    "name": "exec_command", "arguments": json.dumps({"cmd": "touch controller-write-probe"})}
+        if index == 5:
+            output = str(request["input"][-1]["output"]).lower()
+            assert "denied" in output or "not permitted" in output
+        if index >= 5:
+            index -= 1
         inputs.append(text)
         if index == 1:
             contract = json.loads(text.split("Turn request:\n")[1].split("\nYou are the Controller.")[0])
@@ -116,7 +131,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
             answer = {"instruction": "Inspect the observation.", "result": None}
         elif index in (2, 5):
             command = ("if cat .loopx/registry.json >/dev/null; then exit 17; fi; cat observation"
-                       if index == 2 else "cp observation " + marker)
+                       if index == 2 else "tr -d '\\n' > " + marker + " <<EOF\n$(cat observation)\nEOF")
             return {"type": "function_call", "id": f"fc_{index}", "call_id": f"call_{index}",
                     "name": "exec_command", "arguments": json.dumps({"cmd": command})}
         elif index == 3:
@@ -202,6 +217,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
             completed = subprocess.run(retry, cwd=project, env=env, timeout=85, capture_output=True, text=True)
             assert (project / marker).stat().st_mtime_ns == original_worker_write
         assert completed.returncode == 0, completed.stdout[-2200:] + completed.stderr[-500:]
+    assert not (project / "controller-write-probe").exists()
     assert not (tmp_path / "mcp-started").exists()
     assert len(inputs) == (8 if entry == "receipt-repair" else 7) and "Copy the checked observation" in inputs[4]
     assert all("work_contract" not in inputs[i] for i in (1, 2, 4, 5))
