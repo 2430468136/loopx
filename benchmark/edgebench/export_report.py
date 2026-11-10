@@ -31,7 +31,15 @@ def _validate_feedback_payload(runner, profile):
         raise ValueError("Unsupported feedback payload for this mode")
 
 
-def _validate_turn_validator(runner, profile):
+def _validate_worker_settings(runner, profile):
+    if "container_cpus" in runner and (type(runner["container_cpus"]) is not int or runner["container_cpus"] < 1):
+        raise ValueError("Invalid runtime container CPU limit")
+    if "requested_worker" in runner:
+        from benchmark.runtime.codex import governed_worker_profile
+
+        effective = governed_worker_profile(runner["requested_worker"], runner.get("turn_topology", "single-worker"))
+        if effective != runner["worker"]:
+            raise ValueError("Requested entry disagrees with governed Turn topology")
     key = "validation_argv_sha256"
     dual = runner["worker"] == "turn-controller-worker"
     for source in (runner, profile):
@@ -145,7 +153,7 @@ def _validate_run_data(row, config, summary, points):
             raise ValueError(f"Settings identity mismatch: {key}")
     runner, profile = config["runner"], config["worker_profile"]
     _validate_feedback_payload(runner, profile)
-    _validate_turn_validator(runner, profile)
+    _validate_worker_settings(runner, profile)
     if (
         runner["runner_commit"] != row["runner_revision"]
         or runner["model"] != row["model_id"]
@@ -273,7 +281,7 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
         if row.get("runner_revision") != receipt["runner_commit"]:
             raise ValueError("Board and runner revision disagree")
         _validate_feedback_payload(receipt, profile)
-        _validate_turn_validator(receipt, profile)
+        _validate_worker_settings(receipt, profile)
         if receipt.get("planning_horizon_goal") != profile.get("planning_horizon_goal"):
             raise ValueError("Profile disagrees with runtime: planning_horizon_goal")
         for source in (receipt, profile):
@@ -355,16 +363,9 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
             if key in receipt:
                 for target in ("runner", "worker_profile"):
                     config[target][key] = receipt[key]
-        if "requested_worker" in receipt:
-            from benchmark.runtime.codex import governed_worker_profile
-            requested = receipt["requested_worker"]
-            if governed_worker_profile(requested, receipt.get("turn_topology", "single-worker")) != receipt["worker"]:
-                raise ValueError("Requested entry disagrees with governed Turn topology")
-            config["runner"]["requested_worker"] = requested
-        if "container_cpus" in receipt:
-            if type(receipt["container_cpus"]) is not int or receipt["container_cpus"] < 1:
-                raise ValueError("Invalid runtime container CPU limit")
-            config["runner"]["container_cpus"] = receipt["container_cpus"]
+        for key in ("requested_worker", "container_cpus"):
+            if key in receipt:
+                config["runner"][key] = receipt[key]
         if "feedback_payload" in receipt:
             config["runner"]["feedback_payload"] = receipt["feedback_payload"]
             config["worker_profile"]["feedback_payload"] = profile["feedback_payload"]
