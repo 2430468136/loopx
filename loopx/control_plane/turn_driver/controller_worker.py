@@ -20,6 +20,7 @@ from loopx.control_plane.quota.turn_envelope import COMPLETE_TURN_HOST_REQUEST_S
 from loopx.control_plane.runtime.document_io import atomic_write_private_json
 from loopx.control_plane.turn_driver.codex_cli import normalize_codex_result, prepare_codex_cli_input
 from loopx.control_plane.turn_driver.codex_stdio import StdioNativeGoalTransport, disable_mcp_servers
+from loopx.control_plane.turn_driver.decision_capture import read_turn_observation_text
 from loopx.control_plane.turn_driver.executor import MATERIAL_HOST_RESULT_KINDS
 from loopx.control_plane.turn_driver.host_candidate import extract_turn_work_identity
 from loopx.control_plane.turn_driver.journal_store import turn_journal_path
@@ -71,7 +72,7 @@ def read_material(path: Path) -> bytes:
     return data
 
 
-def role_policy(role, host, capture):
+def role_policy(role, host):
     project = host.project
     writable = role == "worker" and host.sandbox != "read-only"
     context = {
@@ -91,17 +92,14 @@ def role_policy(role, host, capture):
             fs[str(path.relative_to(project))] = "deny"
         else:
             filesystem[str(path)] = "deny"
-    if role == "controller" and capture is not None:
-        filesystem[str(capture)] = "read"
     return profile, config
 
 
 class RoleTransport:
-    def __init__(self, rpc, host, deadline, admission, evidence, save, capture=None):
+    def __init__(self, rpc, host, deadline, admission, evidence, save):
         self.rpc, self.host = rpc, host
         self.deadline, self.admission = deadline, admission
         self.evidence, self.save = evidence, save
-        self.capture = capture
         self.threads = {}
         self.permissions = {}
 
@@ -121,7 +119,7 @@ class RoleTransport:
         config = {"web_search": "disabled", "project_doc_max_bytes": 0, "skills": {"include_instructions": False}}
         params = {"cwd": cwd, "runtimeWorkspaceRoots": [cwd], "model": self.host.model,
                   "approvalPolicy": "never"}
-        profile, policy = role_policy(role, self.host, self.capture)
+        profile, policy = role_policy(role, self.host)
         config.update(policy)
         self.permissions[role] = profile
         params["permissions"] = profile
@@ -220,7 +218,10 @@ def run_roles(native, request, material=None):
     prompt, result_schema = prepare_codex_cli_input(request)
     decision_schema = object_schema({"instruction": {"type": ["string", "null"]},
                                      "result": {"anyOf": [result_schema, {"type": "null"}]}})
-    prompt += ("\nYou are the Controller. Read the admitted contract and required material. "
+    prompt += ("\nYou are the Controller. The Host read the journal-bound original decision, verified its "
+               "identity and contents, and delivered it in full in Turn request.work_contract. "
+               "The captured_decision read is fulfilled. Use that inline snapshot for the original decision. "
+               "Read any remaining required task material. "
                "Delegate bounded task work in instruction, including necessary task material and constraints. "
                "Keep Core protocol and private control context here. Assess the returned finding and artifacts. "
                "Give actionable feedback if another work segment is needed. Fill exactly one of instruction or result. "
@@ -270,6 +271,11 @@ def serve(request, host):
     reference = request.get("detail_ref", {}).get("captured_decision", {})
     if reference.get("path") != str(capture) or capture.resolve(strict=True) != capture:
         raise ValueError("original Turn decision capture unavailable")
+    # prepare_codex_cli_input validates the complete contract and its source hash.
+    # Compare the actual journal bytes as JSON before attesting that the inline
+    # work_contract is the original. Neither role needs access to private Core files.
+    if digest(json.loads(read_turn_observation_text(capture))) != digest(request["work_contract"]):
+        raise ValueError("original decision differs from the delivered Turn work contract")
     from loopx.registry import find_registry_goal, load_registry, resolve_state_file
 
     goal = find_registry_goal(load_registry(host.registry), identity["goal_id"])
@@ -315,7 +321,7 @@ def serve(request, host):
         with StdioNativeGoalTransport.spawn(
             [host.codex_bin, "app-server", "--listen", "stdio://"], cwd=str(project), env=os.environ.copy(),
         ) as rpc:
-            native = RoleTransport(rpc, host, deadline, admission, evidence, save, capture)
+            native = RoleTransport(rpc, host, deadline, admission, evidence, save)
             native.request("initialize", {"clientInfo": {"name": "loopx_turn", "version": "1"},
                                          "capabilities": {"experimentalApi": True}})
             rpc.notify("initialized", {})

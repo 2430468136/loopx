@@ -55,14 +55,13 @@ def test_native_role_permissions_cap_the_callers_grant(tmp_path, permission):
     project.mkdir()
     host = roles.RoleHost(project, tmp_path / "state", tmp_path / "registry", tmp_path / "home",
                           "codex", None, "low", permission, 10)
-    capture = tmp_path / "original.json"
     for role in ("controller", "worker"):
-        name, config = roles.role_policy(role, host, capture)
+        name, config = roles.role_policy(role, host)
         rules = config["permissions"][name]
         root = rules["filesystem"][":workspace_roots"]
         assert root["."] == ("write" if role == "worker" and permission != "read-only" else "read")
         assert root[".loopx"] == root[".codex"] == "deny"
-        assert rules["filesystem"].get(str(capture)) == ("read" if role == "controller" else None)
+        assert rules["filesystem"][str(host.runtime)] == "deny"
         assert rules["filesystem"][str(host.codex_home)] == "deny"
         assert rules["network"]["enabled"] is False
 
@@ -188,3 +187,16 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
     assert [s["role"] for s in observation["steps"]] == ["controller", "worker", "controller", "worker", "controller"]
     assert all(s["thread_token_usage_total"]["totalTokens"] > 0 for s in observation["steps"])
     assert fixture["_quota_spend_count"](runtime) == 1
+
+    if entry == "turn":
+        from loopx.control_plane.turn_driver import build_loopx_turn_host_request
+
+        journal = json.loads((record.parent.parent / record.name).read_text())
+        original = build_loopx_turn_host_request(journal["plan"])
+        capture = Path(original["detail_ref"]["captured_decision"]["path"])
+        changed_source = json.loads(capture.read_text())
+        changed_source["recommended_action"] = "An unrelated action."
+        capture.write_text(json.dumps(changed_source))
+        host = roles.RoleHost(project, runtime, registry, home, binary, None, None, "workspace-write", 5)
+        with pytest.raises(ValueError, match="original decision differs"):
+            roles.serve(original, host)

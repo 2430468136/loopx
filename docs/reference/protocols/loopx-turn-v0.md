@@ -94,8 +94,11 @@ loopx turn run-once --execute --prepare-selected-todo --goal-id GOAL --agent-id 
 
 The default single-worker path keeps its existing Host and session policy.
 The dual provider opens two fresh native threads per admission. The Controller
-reads the captured decision, delegates task work and assesses the return. The
-Worker has the caller's workspace grant capped at workspace write. The optional
+receives the complete original decision inline, delegates task work and assesses
+the return. The Host verifies the journal capture against the delivered C1 work
+contract and marks this read fulfilled for the Controller. Private Core files
+remain outside both role sandboxes. The Worker has the caller's workspace grant
+capped at workspace write. The optional
 `--controller-material FILE` delivers one operator-supplied UTF-8 task file (up to 128 KiB) to the Controller, pinned by digest.
 Core retains selection, leases, validation, Spend and the original journal.
 The result identifies its topology. Resume the same Turn with its original Host

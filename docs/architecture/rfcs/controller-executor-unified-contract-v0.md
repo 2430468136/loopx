@@ -1064,6 +1064,16 @@ score was lower and its active Turn had not settled at cutoff. This run leaves
 outcome parity open. Direct CLI and benchmark callers independently qualified
 the product provider's two-role feedback and one-spend path on a controlled model.
 
+A live headless Codex Controller first stopped before dispatch because it tried
+to reopen the private journal. The Host now verifies the captured decision
+against the complete inline C1 contract and tells the Controller that this read
+is fulfilled. In a bounded stage of the public permutation task, the Controller
+and Worker then delivered a candidate from four measured choices. The original
+black box independently reproduced its cost and Core committed one quota spend.
+The pinned judge passed four of five checks. Its private score-helper checksum
+also fails in the pristine judge image with no submission. This limits the pass
+rate on this case. The staged task does not measure comparative solver quality.
+
 **Then switch topology at new Turn admission.** The target is one profile choice
 for the same captured work on either governed entry. Single worker is the
 compatibility default. In the opt-in profile one Controller consumes Core
