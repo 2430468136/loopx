@@ -17,7 +17,8 @@ from ..content_digest import BARE_SHA256_PATTERN
 
 
 from .execution_preparation import (
-    CommandRunner, compact_execution_preparation_request, default_runner, execute_ordinary_claim, run_json,
+    CommandRunner, compact_execution_preparation_request, default_runner as _default_runner,
+    execute_ordinary_claim, run_json,
 )
 
 
@@ -177,7 +178,7 @@ def execute_codex_execution_preparation(
     expected_claim += ["--claim-operation-id", claim_operation_id]
     if request.get("claim_args") != expected_claim:
         raise ValueError("invalid Codex execution-preparation claim arguments")
-    invoke = runner or default_runner
+    invoke = runner or _default_runner
     execute_ordinary_claim(expected_claim, operation_id=claim_operation_id, registry_path=registry_path,
                            runtime_root=runtime_root, cwd=workspace, timeout=timeout / 2, runner=invoke)
     guard = [
