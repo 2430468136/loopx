@@ -1038,8 +1038,12 @@ deadline during a Turn keeps its original transaction available for recovery.
 On the same SQLite Goal, quota and Turn must agree on the selected Todo,
 required preparation and primary work with a missing, owned or foreign lease.
 When Turn inlines a required Goal read, it must deliver the complete canonical
-text before work. Compare native outcomes, elapsed time, usage and committed
-work on the same task with these settings fixed.
+text before work. In the 600-second diagnostic the standard worker reached the
+phase cutoff while the prior Turn worker ended at 465 seconds. Both reached
+80% on the native evaluator. Record the evaluator-selected round, the solver
+and end-to-end elapsed times, cumulative input/cache/output tokens and actual
+spends separately when repeating this comparison. Qualification requires
+comparable accepted outcomes and complete costs across repeated cases.
 
 **Then switch topology at new Turn admission.** The target is one profile choice
 for the same captured work on either governed entry. Single worker is the

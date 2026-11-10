@@ -174,7 +174,12 @@ Both `heartbeat-resume` and `turn-resume` use the external quota scheduler,
 planned task entry and one Agent-scoped Codex session by default. Turn sends
 the captured work to the Host, runs the validator and settles through Core.
 For a comparison, freeze both source revisions, task, feedback, model, effort
-and effective solve time. Heartbeat's native context delivery defaults on.
+and phase limit. Record solver and controller elapsed time separately. Compare
+the judge's selected round using the task's declared selection policy, native
+session usage including cached input, and verified quota spends. For example,
+`pass_rate_first` retains the first round at the highest partial pass rate;
+a later raw score can improve without changing the selected round. Heartbeat's
+native context delivery defaults on.
 Turn uses its product Host request. Both workers use the remaining phase time
 for planning, admission and execution. Turn also runs its required validator
 and settles the original transaction within the same trial budget.
