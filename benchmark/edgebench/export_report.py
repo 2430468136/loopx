@@ -33,7 +33,11 @@ def _validate_feedback_payload(runner, profile):
 
 def _validate_turn_validator(runner, profile):
     key = "validation_argv_sha256"
-    if runner["worker"] == "turn-resume":
+    dual = runner["worker"] == "turn-controller-worker"
+    for source in (runner, profile):
+        if source.get("turn_topology") != ("controller-worker" if dual else None):
+            raise ValueError("Worker topology missing or mismatched")
+    if dual or runner["worker"] == "turn-resume":
         digest = runner.get(key)
         if not isinstance(digest, str) or not re.fullmatch("[0-9a-f]{64}", digest) or profile.get(key) != digest:
             raise ValueError("Turn validator argv digest missing or mismatched")
@@ -347,9 +351,10 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
         }
         # Old notification-only attempts retain absent/unknown payload metadata;
         # never relabel them using today's default or operator-supplied settings.
-        if "validation_argv_sha256" in receipt:
-            for target in ("runner", "worker_profile"):
-                config[target]["validation_argv_sha256"] = receipt["validation_argv_sha256"]
+        for key in ("validation_argv_sha256", "turn_topology"):
+            if key in receipt:
+                for target in ("runner", "worker_profile"):
+                    config[target][key] = receipt[key]
         if "feedback_payload" in receipt:
             config["runner"]["feedback_payload"] = receipt["feedback_payload"]
             config["worker_profile"]["feedback_payload"] = profile["feedback_payload"]

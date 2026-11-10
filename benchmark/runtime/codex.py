@@ -31,14 +31,20 @@ class Execution:
     turn_envelope: bool = False
     context_delivery: str | None = None
     native_child_limit: int | None = None
+    controller_worker: bool = False
 
     def __post_init__(self) -> None:
         if self.native_child_limit is not None and (
             type(self.native_child_limit) is not int or self.native_child_limit < 1
         ):
             raise ValueError("native_child_limit must be a positive integer or None")
+        if type(self.controller_worker) is not bool or (
+                self.controller_worker and (self.mode != "turn" or self.native_child_limit is not None)):
+            raise ValueError("controller-worker requires a governed Turn without native child delegation")
+        if self.controller_worker and self.context not in {None, "fresh"}:
+            raise ValueError("controller-worker role threads are fresh per admission")
         if self.context is None:
-            object.__setattr__(self, "context", "resume" if self.mode in {"heartbeat", "turn"} else "fresh")
+            object.__setattr__(self, "context", "resume" if self.mode in {"heartbeat", "turn"} and not self.controller_worker else "fresh")
         if self.context_delivery is None:
             object.__setattr__(self, "context_delivery", "on" if self.mode == "heartbeat" else "off")
         if self.context_delivery not in ("off", "on") or (self.context_delivery != "off" and self.mode != "heartbeat"):
@@ -75,7 +81,8 @@ class Execution:
         if self.mode != "turn":
             return {}
         encoded = json.dumps(self.validation_command, separators=(",", ":")).encode()
-        return {"validation_argv_sha256": hashlib.sha256(encoded).hexdigest()}
+        return {"validation_argv_sha256": hashlib.sha256(encoded).hexdigest(),
+                **({"turn_topology": "controller-worker"} if self.controller_worker else {})}
 
     @property
     def uses_loopx(self) -> bool:

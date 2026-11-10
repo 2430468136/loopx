@@ -60,6 +60,7 @@ class BenchmarkCodex(CodexOffline):
         self,
         *args,
         execution_mode="heartbeat",
+        controller_worker=False,
         iteration_context=None,
         codex_sandbox="danger-full-access",
         validation_command=None,
@@ -103,6 +104,7 @@ class BenchmarkCodex(CodexOffline):
             turn_envelope,
             context_delivery,
             native_child_limit,
+            controller_worker=controller_worker,
         )
         if type(provider_request_admission) is not bool:
             raise ValueError("provider_request_admission must be a boolean opt-in")
@@ -688,6 +690,7 @@ class BenchmarkCodex(CodexOffline):
                 **({"LOOPX_NATIVE_GOAL_CONTINUE": "1"} if self.native_goal_continue else {}),
                 "LOOPX_ITERATION_CONTEXT": self.execution.context,
                 "LOOPX_CODEX_SANDBOX": self.execution.sandbox,
+                "LOOPX_TURN_TOPOLOGY": "controller-worker" if self.execution.controller_worker else "single-worker",
                 "LOOPX_VALIDATION_COMMAND_JSON": json.dumps(
                     self.execution.validation_command
                 ),

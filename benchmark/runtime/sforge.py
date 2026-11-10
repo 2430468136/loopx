@@ -38,6 +38,7 @@ PROFILE_MODES = {
     "heartbeat-resume": "heartbeat",
     "heartbeat-explore": "heartbeat",
     "turn-resume": "turn",
+    "turn-controller-worker": "turn",
 }
 PROFILES = tuple(PROFILE_MODES)
 DEFAULT_TIMEOUT_SECONDS = 18 * 60 * 60
@@ -50,7 +51,7 @@ def profile_execution(profile, *, task_entry=None, context_delivery=None,
     if profile not in PROFILE_MODES:
         raise ValueError("Unknown benchmark worker profile")
     return Execution(
-        mode=PROFILE_MODES[profile], task_entry=task_entry, context_delivery=context_delivery,
+        mode=PROFILE_MODES[profile], controller_worker=profile == "turn-controller-worker", task_entry=task_entry, context_delivery=context_delivery,
         turn_envelope=turn_envelope, native_child_limit=native_child_limit,
         validation_command=() if validation_command is None else validation_command,
     )
@@ -367,6 +368,7 @@ class SForgeWorker(CodexAgent):
             self.runtime = BenchmarkCodex(
                 **common, execution_mode=self.execution.mode,
                 iteration_context=self.execution.context,
+                controller_worker=self.execution.controller_worker,
                 validation_command=self.execution.validation_command,
                 turn_timeout_sec=None,
                 scheduler_timeout_sec=self.timeout_seconds,

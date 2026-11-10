@@ -119,7 +119,7 @@ def main(argv=None):
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--worker", choices=PROFILES, required=True)
     parser.add_argument("--validation-command-json", type=json.loads,
-                        help="For turn-resume, trusted guest argv that independently checks the work postcondition")
+                        help="For governed Turn workers, trusted guest argv that independently checks the work postcondition")
     parser.add_argument("--feedback", choices=FEEDBACK_MODES, default="native",
                         help="New-run default: native public feedback; blind/best-only are explicit controls")
     parser.add_argument("--managed-run-json", type=Path,

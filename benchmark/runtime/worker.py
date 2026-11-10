@@ -8,6 +8,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 import uuid
 from contextlib import ExitStack, contextmanager, nullcontext
@@ -291,6 +292,8 @@ def pending_turn(path: Path, turn_id: str, execution: Execution) -> dict:
         atomic_write_private_json(path, pending)
         return pending
     pending = read_json(path.read_text())
+    if pending.get("turn_topology") != validator.get("turn_topology"):
+        raise ValueError("Pending Turn requires its original worker topology")
     if ("validation_argv_sha256" in pending
             and pending["validation_argv_sha256"] != validator["validation_argv_sha256"]):
         raise ValueError("Pending Turn requires its original validation command")
@@ -309,13 +312,20 @@ def turn_command(
         address = ["--resume-turn-key", resume_turn_key, "--retry-failed-turn"]
     elif recover_instance:
         address = ["--resume-turn-instance-id", turn_id, "--retry-failed-turn"]
+    host = ["--host", "codex-cli", "--session-scope", "agent",
+            "--codex-reasoning-effort", env["REASONING_EFFORT"], "--codex-bin", env["CODEX_BIN"],
+            "--codex-model", env["MODEL_NAME"], "--codex-sandbox", execution.sandbox]
+    if execution.controller_worker:
+        from loopx.control_plane.quota.turn_envelope import COMPLETE_TURN_HOST_REQUEST_SCHEMA
+
+        host = ["--host", "generic-cli", "--host-adapter-request-schema", COMPLETE_TURN_HOST_REQUEST_SCHEMA,
+                "--host-adapter-command-json", json.dumps([sys.executable, "-P", "-m", "benchmark.runtime.controller_worker"])]
     return loopx_command(env) + [
         "turn",
         "run-once",
         "--execute",
         "--no-global-sync",
-        "--host",
-        "codex-cli",
+        *host,
         "--project",
         env["LOOPX_PROJECT"],
         "--goal-id",
@@ -327,16 +337,6 @@ def turn_command(
         *address,
         "--iteration-context",
         execution.context,
-        "--session-scope",
-        "agent",
-        "--codex-reasoning-effort",
-        env["REASONING_EFFORT"],
-        "--codex-bin",
-        env["CODEX_BIN"],
-        "--codex-model",
-        env["MODEL_NAME"],
-        "--codex-sandbox",
-        execution.sandbox,
         *(["--timeout-seconds", str(execution.timeout_seconds)]
           if execution.timeout_seconds is not None else []),
         "--validation-command-json",
@@ -523,7 +523,11 @@ def run_once(env: dict[str, str]) -> dict:
         raise ValueError("LOOPX_CONTEXT_DELIVERY supports only off or on")
     if env.get("LOOPX_TURN_ENVELOPE", "0") not in {"0", "1"}:
         raise ValueError("LOOPX_TURN_ENVELOPE must be 0 or 1")
+    topology = env.get("LOOPX_TURN_TOPOLOGY", "single-worker")
+    if topology not in {"single-worker", "controller-worker"}:
+        raise ValueError("unknown governed Turn topology")
     execution = Execution(
+        controller_worker=topology == "controller-worker",
         mode=env.get("LOOPX_EXECUTION_MODE", "heartbeat"),
         context=env.get("LOOPX_ITERATION_CONTEXT"),
         sandbox=env.get("LOOPX_CODEX_SANDBOX", "danger-full-access"),
@@ -715,6 +719,10 @@ def run_once(env: dict[str, str]) -> dict:
                         raise RuntimeError("Another benchmark wake owns the pending Turn")
                     pending = pending_turn(pending_path, turn_id, execution)
                     receipt["turn_instance_id"] = pending["turn_instance_id"]
+                    if execution.controller_worker:
+                        if execution.timeout_seconds is None:
+                            raise ValueError("controller-worker requires a finite Turn or phase deadline")
+                        env["LOOPX_ROLE_TIMEOUT_SECONDS"] = str(execution.timeout_seconds)
                 command = (
                     turn_command(
                         env,
