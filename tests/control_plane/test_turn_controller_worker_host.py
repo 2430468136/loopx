@@ -195,6 +195,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
                 'wire_api="responses"\nenv_key="OPENAI_API_KEY"\n'
                 '[mcp_servers."unused.fixture"]\ncommand="/bin/sh"\n'
                 f'args=["-c", "touch {tmp_path / "mcp-started"}"]\n'
+                '[mcp_servers.remote]\nurl="http://127.0.0.1:1/unused"\nrequired=true\n'
             )
             env = {k: v for k, v in os.environ.items() if not k.startswith("LOOPX_")}
             env.update(CODEX_HOME=str(home), OPENAI_API_KEY="fixture", PYTHONPATH=str(src), LOOPX_USAGE_PING="0")
@@ -219,6 +220,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
         assert completed.returncode == 0, completed.stdout[-2200:] + completed.stderr[-500:]
     assert not (project / "controller-write-probe").exists()
     assert not (tmp_path / "mcp-started").exists()
+    assert all("Worker can create and edit task artifacts" in inputs[index] for index in (0, 1, 4))
     assert len(inputs) == (8 if entry == "receipt-repair" else 7) and "Copy the checked observation" in inputs[4]
     assert all("work_contract" not in inputs[i] for i in (1, 2, 4, 5))
     assert (project / marker).read_text() == expected

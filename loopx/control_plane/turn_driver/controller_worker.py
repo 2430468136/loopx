@@ -12,9 +12,11 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from loopx.control_plane.effect_runtime import effect_runtime_result
 from loopx.control_plane.goals.first_party_host_admission import FirstPartyHostGoalAdmission
@@ -32,7 +34,7 @@ from loopx.control_plane.turn_driver.journal_store import turn_journal_path
 from loopx.file_lock import try_exclusive_file_lock
 
 
-def digest(value):
+def digest(value: Any) -> str:
     raw = json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -61,7 +63,11 @@ class RoleHost:
     goal_state: Path | None = None
 
     @property
-    def protected(self):
+    def worker_writable(self) -> bool:
+        return self.sandbox != "read-only"
+
+    @property
+    def protected(self) -> tuple[Path, ...]:
         return (self.runtime, self.registry, self.codex_home, self.project / ".codex",
                 self.project / ".loopx", self.project / ".git", self.project / "ACTIVE_GOAL_STATE.md",
                 *((self.goal_state,) if self.goal_state is not None else ()))
@@ -77,9 +83,9 @@ def read_material(path: Path) -> bytes:
     return data
 
 
-def role_policy(role, host):
+def role_policy(role: str, host: RoleHost) -> tuple[str, dict[str, Any]]:
     project = host.project
-    writable = role == "worker" and host.sandbox != "read-only"
+    writable = role == "worker" and host.worker_writable
     context = {
         "kind": "project_workspace", "workspace_path": str(project), "project_ref": digest(str(project))[:24],
         "audience": "local_owner", "grant": "workspace_write" if writable else "workspace_read",
@@ -100,16 +106,16 @@ def role_policy(role, host):
     return profile, config
 
 
-def toml_value(value):
+def toml_value(value: Any) -> str:
     # Codex -c takes TOML, including quoted filesystem keys, never shell text.
     if isinstance(value, dict):
         return "{" + ", ".join(json.dumps(key) + " = " + toml_value(item) for key, item in value.items()) + "}"
     return json.dumps(value)
 
 
-def role_cli_options(role, host, timeout):
+def role_cli_options(role: str, host: RoleHost, timeout: float) -> tuple[str, ...]:
     _, config = role_policy(role, host)
-    if role == "worker" and host.sandbox != "read-only":
+    if role == "worker" and host.worker_writable:
         # Shell here-documents, compilers and tempfile users need scratch space.
         # Use the existing write grant; the shared system temp directory stays denied.
         shell = config["shell_environment_policy"]
@@ -131,16 +137,25 @@ def role_cli_options(role, host, timeout):
     if not isinstance(servers, list) or not all(isinstance(row, dict) and isinstance(row.get("name"), str)
                                                and row["name"] for row in servers):
         raise ValueError("invalid Codex CLI tool inventory")
-    # Codex validates each CLI-layer transport before merging with lower
-    # layers. Supply a complete disabled entry without importing account
-    # commands, URL headers or environment into the process arguments.
-    config["mcp_servers"] = {row["name"]: {"enabled": False, "command": sys.executable,
-                                            "args": ["-I", "-c", "pass"]} for row in servers}
+    # Codex validates each override before merging native configuration.
+    # Mask only enabled, existing entries. Match their discriminator with
+    # an empty address so there is no executable, endpoint or credential.
+    masks = {}
+    for server in servers:
+        if server.get("enabled") is False:
+            continue
+        kind = server["transport"]["type"]
+        if kind not in {"stdio", "streamable_http"}:
+            raise ValueError("unsupported native MCP transport")
+        address = "command" if kind == "stdio" else "url"
+        masks[server["name"]] = {"enabled": False, address: ""}
+    if masks:
+        config["mcp_servers"] = masks
     overrides = [key + "=" + toml_value(value) for key, value in config.items()]
     return ("--ignore-rules", *(arg for override in overrides for arg in ("-c", override)))
 
 
-def cli_model_binding(host, thread):
+def cli_model_binding(host: RoleHost, thread: str) -> dict[str, str]:
     # The exec JSONL stream identifies the thread. Read only the native model
     # and provider chosen for that exact id; neither transcripts nor auth enter Core.
     for db in sorted(host.codex_home.glob("state_*.sqlite"), reverse=True):
@@ -153,39 +168,41 @@ def cli_model_binding(host, thread):
 
 
 class RoleTransport:
-    def __init__(self, host, deadline, admission, evidence, save):
+    def __init__(self, host: RoleHost, deadline: float, admission: FirstPartyHostGoalAdmission,
+                 evidence: dict[str, Any], save: Callable[[], None]) -> None:
         self.host, self.deadline, self.admission = host, deadline, admission
         self.evidence, self.save = evidence, save
 
-    def remaining(self):
+    def remaining(self) -> float:
         seconds = self.deadline - time.monotonic()
         if seconds <= 0:
             raise TimeoutError("controller-worker Turn deadline")
         return seconds
 
-    def check_running(self):
+    def check_running(self) -> None:
         self.remaining()
         with self.admission.launch_lifetime(operation="turn_role_continue"):
             pass
 
-    def send(self, role, prompt, schema):
+    def send(self, role: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         threads = self.evidence["threads"]
         previous = threads.get(role)
         binding = self.evidence.get("host_models", {}).get(role)
         options = role_cli_options(role, self.host, self.remaining())
         if previous:
-            if self.evidence.get("transport") != "codex-exec" or binding != cli_model_binding(self.host, previous):
+            if (self.evidence.get("transport") != "codex-exec" or not isinstance(binding, dict)
+                    or binding != cli_model_binding(self.host, previous)):
                 raise RuntimeError("original native role binding unavailable")
             options += ("-c", "model_provider=" + toml_value(binding["modelProvider"]))
-        step = {"role": role, "command": "exec resume" if previous else "exec", "input_sha256": digest(prompt),
+        step: dict[str, Any] = {"role": role, "command": "exec resume" if previous else "exec", "input_sha256": digest(prompt),
                 "thread_token_usage_total": None}
         self.evidence["steps"].append(step)
         self.save()
-        seen = None
+        seen: str | None = None
         completed = False
         failures = CodexFailureObservation()
 
-        def observe(line):
+        def observe(line: str) -> None:
             nonlocal seen, completed
             event = json.loads(line)
             candidate = codex_cli_event_session_id(event)
@@ -216,8 +233,7 @@ class RoleTransport:
                 schema_path, output = Path(temp) / "schema.json", Path(temp) / "result.json"
                 schema_path.write_text(json.dumps(schema), encoding="utf-8")
                 command = _codex_command(codex_bin=self.host.codex_bin, project=self.host.project,
-                    schema_path=schema_path, output_path=output, sandbox=None, model=binding["model"] if previous
-                    else self.host.model, reasoning_effort=self.host.effort, session_id=previous,
+                    schema_path=schema_path, output_path=output, sandbox=None, model=binding["model"] if binding else self.host.model, reasoning_effort=self.host.effort, session_id=previous,
                     mcp_server=None, config_args=options)
                 events = HostOutputLines(observe)
                 diagnostics = HostOutputLines(failures.observe_stderr)
@@ -262,6 +278,10 @@ def run_roles(native, request, material=None):
                "Keep Core protocol and private control context here. Assess the returned finding and artifacts. "
                "Give actionable feedback if another work segment is needed. Fill exactly one of instruction or result. "
                "Return the typed Turn result when ready. At most three Worker segments share this admission.")
+    worker_grant = ("The Worker can create and edit task artifacts in the workspace." if native.host.worker_writable
+                    else "The Worker has read-only access to the workspace.")
+    prompt += ("\nYour own Controller session is read-only. " + worker_grant
+               + " Delegate the authorized task using the Worker's actual grant.")
     if material is not None:
         prompt += "\nOperator-supplied task material:\n" + material
     for index in range(4):
@@ -275,8 +295,8 @@ def run_roles(native, request, material=None):
             return normalize_codex_result(request, result)
         if index == 3 or not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 16000:
             raise ValueError("controller exhausted delegation or returned an invalid task")
-        returned = native.send("worker", "Execute this scoped task in the workspace. Return observed findings "
-                               "and artifact paths.\n\n" + instruction, WORK_REPORT)
+        returned = native.send("worker", "Execute this scoped task in the workspace. " + worker_grant
+                               + " Return observed findings and artifact paths.\n\n" + instruction, WORK_REPORT)
         if (not isinstance(returned.get("finding"), str) or not returned["finding"].strip()
                 or not isinstance(returned.get("artifacts"), list)
                 or not all(isinstance(path, str) for path in returned["artifacts"])):
