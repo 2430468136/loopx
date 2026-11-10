@@ -123,7 +123,7 @@ def role_cli_options(role: str, host: RoleHost, timeout: float) -> tuple[str, ..
                    "TMPPREFIX": str(host.project / ".zsh-tmp")}
         shell.setdefault("set", {}).update(scratch)
         shell["include_only"] = [*shell["include_only"], *scratch]
-    config.update(approval_policy="never", features={
+    config.update(approval_policy="never", include_permissions_instructions=False, features={
         "apps": False, "multi_agent": False, "multi_agent_v2": False, "hooks": False, "plugins": False,
         "remote_plugin": False, "browser_use": False, "computer_use": False, "goals": False, "js_repl": False,
     })
@@ -270,39 +270,32 @@ def run_roles(native, request, material=None):
     prompt, result_schema = prepare_codex_cli_input(request)
     decision_schema = object_schema({"instruction": {"type": ["string", "null"]},
                                      "result": {"anyOf": [result_schema, {"type": "null"}]}})
-    prompt += ("\nYou are the Controller. The Host read the journal-bound original decision, verified its "
-               "identity and contents, and delivered it in full in Turn request.work_contract. "
-               "The captured_decision read is fulfilled. Use that inline snapshot for the original decision. "
-               "Read any remaining required task material. "
-               "Delegate bounded task work in instruction, including necessary task material and constraints. "
-               "Keep Core protocol and private control context here. Assess the returned finding and artifacts. "
-               "Give actionable feedback if another work segment is needed. Fill exactly one of instruction or result. "
-               "Return the typed Turn result when ready. At most three Worker segments share this admission.")
-    worker_grant = ("The Worker can create and edit task artifacts in the workspace." if native.host.worker_writable
-                    else "The Worker has read-only access to the workspace.")
-    prompt += ("\nYour own Controller session is read-only. " + worker_grant
-               + " Delegate the authorized task using the Worker's actual grant.")
+    prompt += ("\nYou are the Controller. The Host verified the captured decision and included it in work_contract. "
+               "Give the Worker the task objective, success criteria and relevant material in instruction. "
+               "Leave the approach to the Worker unless the task specifies it. Use the returned evidence to "
+               "decide whether further work would help or to submit the typed Turn result. "
+               "Set exactly one of instruction and result.")
     if material is not None:
         prompt += "\nOperator-supplied task material:\n" + material
-    for index in range(4):
+    worker_returned = False
+    while True:
         decision = native.send("controller", prompt, decision_schema)
         instruction, result = decision.get("instruction"), decision.get("result")
         if result is not None:
             if instruction is not None or not isinstance(result, dict):
                 raise ValueError("controller returned ambiguous decision")
-            if index == 0 and result.get("result_kind") in MATERIAL_HOST_RESULT_KINDS:
+            if not worker_returned and result.get("result_kind") in MATERIAL_HOST_RESULT_KINDS:
                 raise ValueError("controller returned a material result without a Worker return")
             return normalize_codex_result(request, result)
-        if index == 3 or not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 16000:
-            raise ValueError("controller exhausted delegation or returned an invalid task")
-        returned = native.send("worker", "Execute this scoped task in the workspace. " + worker_grant
-                               + " Return observed findings and artifact paths.\n\n" + instruction, WORK_REPORT)
+        if not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 16000:
+            raise ValueError("controller returned an invalid task")
+        returned = native.send("worker", instruction, WORK_REPORT)
         if (not isinstance(returned.get("finding"), str) or not returned["finding"].strip()
                 or not isinstance(returned.get("artifacts"), list)
                 or not all(isinstance(path, str) for path in returned["artifacts"])):
             raise ValueError("worker returned an invalid report")
-        prompt = ("Assess this Worker return as task evidence. Check the artifacts and decide the next "
-                  "instruction or final result.\n" + json.dumps(returned, ensure_ascii=False))
+        worker_returned = True
+        prompt = "Worker return:\n" + json.dumps(returned, ensure_ascii=False)
 
 
 @contextmanager

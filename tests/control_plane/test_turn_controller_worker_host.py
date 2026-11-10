@@ -41,6 +41,26 @@ def test_revoked_role_drains_silent_exec_process(tmp_path, monkeypatch):
     assert len(state["steps"]) == 1 and state["steps"][0]["thread_token_usage_total"] is None
 
 
+def test_worker_can_iterate_until_the_host_deadline(monkeypatch):
+    from types import SimpleNamespace
+
+    instructions = [f"Explore alternative {i}." for i in range(5)]
+    reports = iter(instructions)
+    worker_inputs = []
+
+    def send(role, prompt, schema):
+        if role == "worker":
+            worker_inputs.append(prompt)
+            return {"finding": "Measured another candidate.", "artifacts": []}
+        instruction = next(reports, None)
+        return {"instruction": instruction, "result": None if instruction else {"result_kind": "validated_progress"}}
+
+    monkeypatch.setattr(roles, "prepare_codex_cli_input", lambda _: ("task", {}))
+    monkeypatch.setattr(roles, "normalize_codex_result", lambda _, result: result)
+    result = roles.run_roles(SimpleNamespace(send=send), {})
+    assert result["result_kind"] == "validated_progress" and worker_inputs == instructions
+
+
 @pytest.mark.parametrize("permission", ["danger-full-access", "read-only"])
 def test_native_role_permissions_cap_the_callers_grant(tmp_path, permission):
     project = tmp_path / "task"
@@ -114,6 +134,9 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
     inputs = []
     def respond(request, index, message):
         nonlocal key
+        assert not any("<permissions instructions>" in part.get("text", "")
+                       for item in request["input"] if item.get("role") == "developer"
+                       for part in item["content"] if isinstance(part, dict))
         text = [part["text"] for item in request["input"] if item.get("role") == "user"
                 for part in item["content"] if "text" in part][-1]
         if index == 4:
@@ -220,7 +243,8 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
         assert completed.returncode == 0, completed.stdout[-2200:] + completed.stderr[-500:]
     assert not (project / "controller-write-probe").exists()
     assert not (tmp_path / "mcp-started").exists()
-    assert all("Worker can create and edit task artifacts" in inputs[index] for index in (0, 1, 4))
+    assert inputs[1] == "Inspect the observation."
+    assert inputs[4] == "Copy the checked observation into the output file."
     assert len(inputs) == (8 if entry == "receipt-repair" else 7) and "Copy the checked observation" in inputs[4]
     assert all("work_contract" not in inputs[i] for i in (1, 2, 4, 5))
     assert (project / marker).read_text() == expected
