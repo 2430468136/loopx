@@ -14,13 +14,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from loopx.capabilities.native_chat.codex_context import disable_mcp_servers
 from loopx.control_plane.effect_runtime import effect_runtime_result
 from loopx.control_plane.goals.first_party_host_admission import FirstPartyHostGoalAdmission
 from loopx.control_plane.quota.turn_envelope import COMPLETE_TURN_HOST_REQUEST_SCHEMA
 from loopx.control_plane.runtime.document_io import atomic_write_private_json
 from loopx.control_plane.turn_driver.codex_cli import normalize_codex_result, prepare_codex_cli_input
-from loopx.control_plane.turn_driver.codex_stdio import StdioNativeGoalTransport
+from loopx.control_plane.turn_driver.codex_stdio import StdioNativeGoalTransport, disable_mcp_servers
 from loopx.control_plane.turn_driver.executor import MATERIAL_HOST_RESULT_KINDS
 from loopx.control_plane.turn_driver.host_candidate import extract_turn_work_identity
 from loopx.control_plane.turn_driver.journal_store import turn_journal_path

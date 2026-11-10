@@ -142,7 +142,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
             home = tmp_path / "role-home"
             home.mkdir()
             (home / "config.toml").write_text(
-                f'model_provider="local"\n[model_providers.local]\nname="local"\nbase_url="{url}"\n'
+                f'model="gpt-5.4"\nmodel_reasoning_effort="low"\nmodel_provider="local"\n[model_providers.local]\nname="local"\nbase_url="{url}"\n'
                 'wire_api="responses"\nenv_key="OPENAI_API_KEY"\n'
             )
             env = {k: v for k, v in os.environ.items() if not k.startswith("LOOPX_")}
@@ -153,7 +153,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
                    "--host", "codex-cli", "--execution-mode", "isolated-headless", "--topology", "controller-worker",
                    "--scheduler-owner", "outer_controller", "--prepare-selected-todo",
                    "--turn-instance-id", "direct-roles", "--timeout-seconds", "45", "--codex-bin", binary,
-                   "--controller-material", str(material), "--codex-model", "gpt-5.4", "--codex-reasoning-effort", "low", "--codex-sandbox", "workspace-write",
+                   "--controller-material", str(material), "--codex-sandbox", "workspace-write",
                    "--validation-command-json", json.dumps(fixture["_validator_command"](expected))]
         completed = subprocess.run(cmd, cwd=project, env=env, timeout=85, capture_output=True, text=True)
         assert completed.returncode == 0, completed.stdout[-2200:] + completed.stderr[-500:]

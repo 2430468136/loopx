@@ -1513,6 +1513,40 @@ def _host_attempt_requirements(
     return needs_host, retry_validation, None
 
 
+def _prepare_failed_turn_retry(
+    journal: dict[str, Any], request: dict[str, Any], *, validation_reinvokes_host: bool,
+) -> dict[str, Any]:
+    """Reset the failed phase and return the original request with any applicable feedback."""
+    receipt = journal.get("receipt")
+    if isinstance(receipt, dict) and receipt.get("failed_phase") == "validation":
+        if validation_reinvokes_host:
+            if journal.get("validation_stage") == "host_result_contract":
+                # Feedback is about the previous response, outside the immutable
+                # work contract. Never send rejected private values back on this wire.
+                request = {**request, "result_contract": {
+                    **request["result_contract"],
+                    "correction": "The previous result failed the Host result contract. "
+                    "Read back existing work and correct its structured receipt. "
+                    "Use public-safe artifact names and observed checks in evidence. "
+                    "Keep private locations and raw output in the workspace.",
+                }}
+            journal.pop("host_result", None)
+        journal.pop("result_kind", None)
+        journal["completed_phases"] = (
+            list(TRANSACTION_PHASES[:2])
+            if isinstance(journal.get("host_result"), dict)
+            else []
+        )
+        journal.pop("task_validation", None)
+        journal.pop("validation_stage", None)
+    journal.pop("reason", None)
+    journal.pop("receipt", None)
+    journal.pop("host_recovery", None)
+    journal.pop("host_failure", None)
+    journal["status"] = "in_progress"
+    return request
+
+
 @single_executor_per_turn_lane(execution_payload)
 def run_loopx_turn_once(
     plan: Mapping[str, Any],
@@ -1742,37 +1776,7 @@ def run_loopx_turn_once(
             persist_journal(journal)
 
         if journal and journal.get("status") == "failed":
-            receipt = (
-                journal.get("receipt")
-                if isinstance(journal.get("receipt"), dict)
-                else {}
-            )
-            if receipt.get("failed_phase") == "validation":
-                if validation_reinvokes_host:
-                    if journal.get("validation_stage") == "host_result_contract":
-                        # Feedback is about the previous response, outside the immutable
-                        # work contract. Never send rejected private values back on this wire.
-                        request = {**request, "result_contract": {
-                            **request["result_contract"],
-                            "correction": "The previous result failed the Host result contract. "
-                            "Read back existing work and correct its structured receipt. "
-                            "Use public-safe artifact names and observed checks in evidence. "
-                            "Keep private locations and raw output in the workspace.",
-                        }}
-                    journal.pop("host_result", None)
-                journal.pop("result_kind", None)
-                journal["completed_phases"] = (
-                    list(TRANSACTION_PHASES[:2])
-                    if isinstance(journal.get("host_result"), dict)
-                    else []
-                )
-                journal.pop("task_validation", None)
-                journal.pop("validation_stage", None)
-            journal.pop("reason", None)
-            journal.pop("receipt", None)
-            journal.pop("host_recovery", None)
-            journal.pop("host_failure", None)
-            journal["status"] = "in_progress"
+            request = _prepare_failed_turn_retry(journal, request, validation_reinvokes_host=validation_reinvokes_host)
             persist_journal(journal)
         reserved_start = admission is not None and admission.get("reserved") is True
         if journal is None or reserved_start:
