@@ -98,8 +98,10 @@ receives the complete original decision inline, delegates task work and assesses
 the return. The Host verifies the journal capture against the delivered C1 work
 contract and marks this read fulfilled for the Controller. Private Core files
 remain outside both role sandboxes. The Worker has the caller's workspace grant
-capped at workspace write. The optional
-`--controller-material FILE` delivers one operator-supplied UTF-8 task file (up to 128 KiB) to the Controller, pinned by digest.
+capped at workspace write. Use `--task-material FILE` to give the Worker the original UTF-8 task unchanged
+after the Controller chooses `dispatch`. Use `--controller-material FILE` for
+Controller-only context. These options share a 128 KiB limit. The original
+admission pins the content digest and its audience.
 Core retains selection, leases, validation, Spend and the original journal.
 The result identifies its topology. Resume the same Turn with its original Host
 configuration. Switch topology on a new Turn. Missing native sandbox support
@@ -117,8 +119,8 @@ The reference provider starts both roles with `codex exec --json` and continues 
 with `codex exec resume` and its original session ID. It uses the selected native
 account and model provider. No MCP service is required for role handoff. The Host
 reads the names and transport types of configured MCP sources to disable them for
-the invocation. The user's configuration stays with Codex. The Controller receives
-both its own read-only grant and the Worker's effective grant. A writable Worker
+the invocation. The user's configuration stays with Codex. The Host forwards the Controller's task instruction verbatim. The native sandbox enforces
+its policy and the role driver omits the permissions briefing. A writable Worker
 uses its workspace for shell temporary files. A caller
 able to run the headless Turn may use it from a CLI, scheduler or external Host.
 An interactive Codex App heartbeat or an existing Chat/Steward connection owns
