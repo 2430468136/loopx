@@ -82,8 +82,8 @@ def handle_turn_command(
                      or args.iteration_context != "fresh" or getattr(args, "codex_operation_tools", False)
                      or getattr(args, "delegation_context_json", None)):
             raise ValueError("controller-worker requires isolated-headless codex-cli with fresh role threads and no operation transport")
-        if not dual and getattr(args, "controller_material", None) is not None:
-            raise ValueError("--controller-material requires controller-worker topology")
+        if not dual and (getattr(args, "controller_material", None) or getattr(args, "task_material", None)):
+            raise ValueError("role task material requires controller-worker topology")
         if (native_host_runner is not None or native_session_binding_resolver is not None) and (
             args.host != "codex-app-server" or native_host_runner is None or native_session_binding_resolver is None
         ):

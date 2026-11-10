@@ -61,6 +61,7 @@ class RoleHost:
     material: Path | None = None
     material_sha256: str | None = None
     goal_state: Path | None = None
+    dispatch_task_material: bool = False
 
     @property
     def worker_writable(self) -> bool:
@@ -266,15 +267,22 @@ class RoleTransport:
             self.save()
 
 
-def run_roles(native, request, material=None):
+def run_roles(native, request, material=None, *, dispatch_task_material=False):
     prompt, result_schema = prepare_codex_controller_input(request)
     decision_schema = object_schema({"instruction": {"type": ["string", "null"]},
                                      "result": {"anyOf": [result_schema, {"type": "null"}]}})
+    original_task = material if dispatch_task_material else None
+    if original_task is not None:
+        prompt += '\nThe caller supplied the Worker task below. Use instruction="dispatch" to send it unchanged.'
     if material is not None:
         prompt += "\nOperator-supplied task material:\n" + material
     worker_returned = False
     while True:
-        decision = native.send("controller", prompt, decision_schema)
+        schema = decision_schema
+        if original_task is not None and not worker_returned:
+            schema = object_schema({**decision_schema["properties"], "instruction": {"enum": ["dispatch", None],
+                                    "type": ["string", "null"]}})
+        decision = native.send("controller", prompt, schema)
         instruction, result = decision.get("instruction"), decision.get("result")
         if result is not None:
             if instruction is not None or not isinstance(result, dict):
@@ -284,6 +292,10 @@ def run_roles(native, request, material=None):
             return normalize_codex_result(request, result)
         if not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 16000:
             raise ValueError("controller returned an invalid task")
+        if original_task is not None and not worker_returned:
+            if instruction != "dispatch":
+                raise ValueError("expected dispatch of the original Worker task")
+            instruction = original_task
         returned = native.send("worker", instruction, WORK_REPORT)
         if (not isinstance(returned.get("finding"), str) or not returned["finding"].strip()
                 or not isinstance(returned.get("artifacts"), list)
@@ -414,7 +426,7 @@ def serve(request, host):
         save()
         native = RoleTransport(host, deadline, admission, evidence, save)
         if attempt is evidence:
-            result = run_roles(native, request, material)
+            result = run_roles(native, request, material, dispatch_task_material=host.dispatch_task_material)
         else:
             result = correct_original_receipt(native, request, evidence)
         attempt["result"] = result
@@ -433,10 +445,12 @@ def main():
     parser.add_argument("--timeout", type=float, required=True)
     parser.add_argument("--material", type=Path)
     parser.add_argument("--material-sha256")
+    parser.add_argument("--dispatch-task-material", action="store_true")
     args = parser.parse_args()
     home = Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser().resolve()
     host = RoleHost(args.project.resolve(), args.runtime.resolve(), args.registry.resolve(), home,
-                    args.codex_bin, args.model, args.effort, args.sandbox, args.timeout, args.material, args.material_sha256)
+                    args.codex_bin, args.model, args.effort, args.sandbox, args.timeout, args.material, args.material_sha256,
+                    dispatch_task_material=args.dispatch_task_material)
     with interrupt_on_stop():
         print(json.dumps(serve(json.load(sys.stdin), host), ensure_ascii=False))
 

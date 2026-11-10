@@ -317,7 +317,7 @@ def turn_command(
     if execution.controller_worker:
         host.extend(["--topology", "controller-worker"])
         if env.get("LOOPX_TASK_DOC"):
-            host.extend(["--controller-material", env["LOOPX_TASK_DOC"]])
+            host.extend(["--task-material", env["LOOPX_TASK_DOC"]])
     return loopx_command(env) + [
         "turn",
         "run-once",

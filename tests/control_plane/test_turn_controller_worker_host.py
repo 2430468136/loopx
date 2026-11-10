@@ -32,7 +32,7 @@ with try_exclusive_file_lock(Path('active-role')) as lock:
 
     class Admission:
         def launch_lifetime(self, *, operation):
-            if operation == "turn_role_continue":
+            if operation == "turn_role_continue" and (project / "started").exists():
                 raise InterruptedError("operator stop")
             return nullcontext()
 
@@ -137,6 +137,10 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
     (tmp_path / "skills").mkdir()
     marker, expected = fixture["MARKER_NAME"], fixture["_marker_value"](1)
     (project / "observation").write_text(expected)
+    source_task = "Inspect the observation.\nReport the checksum."
+    task_file = tmp_path / "worker-task.txt"
+    task_file.write_text(source_task)
+    pinned_task = entry != "turn"
     key = None
     inputs = []
     def respond(request, index, message):
@@ -158,7 +162,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
         if index == 1:
             contract, _ = json.JSONDecoder().raw_decode(text.split("Turn request:\n", 1)[1])
             key = contract["turn_key"]
-            answer = {"instruction": "Inspect the observation.", "result": None}
+            answer = {"instruction": "dispatch" if pinned_task else "Inspect the observation.", "result": None}
         elif index in (2, 5):
             command = ("if cat .loopx/registry.json >/dev/null; then exit 17; fi; cat observation"
                        if index == 2 else "tr -d '\\n' > " + marker + " <<EOF\n$(cat observation)\nEOF")
@@ -208,7 +212,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
             LOOPX_GOAL_ID=goal, LOOPX_AGENT_ID=agent, LOOPX_SHARED_SKILLS=str(tmp_path / "skills"),
             LOOPX_CODEX_HOME=str(tmp_path / "codex"), LOOPX_WAKE_LOG_DIR=str(tmp_path / "logs/wakes"),
             LOOPX_CODEX_SANDBOX="workspace-write", LOOPX_EXECUTION_MODE="turn", LOOPX_TASK_ENTRY="seeded-todo",
-            LOOPX_TURN_TOPOLOGY="controller-worker", LOOPX_CODEX_TURN_TIMEOUT_SEC="45",
+            LOOPX_TURN_TOPOLOGY="controller-worker", LOOPX_CODEX_TURN_TIMEOUT_SEC="45", LOOPX_TASK_DOC=str(task_file),
             LOOPX_VALIDATION_COMMAND_JSON=json.dumps(fixture["_validator_command"](expected)))
         if entry == "benchmark":
             from benchmark.runtime.scheduler import worker_command
@@ -216,8 +220,10 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
                                  state_file=str(tmp_path / "scheduler.json"), host_timeout=70) + ["--once"]
         else:
             # Standalone product invocation, with no benchmark variables or guest installation.
-            material = tmp_path / "task-material.txt"
-            material.write_text("Read the supplied observation as a checksum.")
+            material = task_file if pinned_task else tmp_path / "task-material.txt"
+            if not pinned_task:
+                material.write_text("Read the supplied observation as a checksum.")
+            material_option = "--task-material" if pinned_task else "--controller-material"
             home = tmp_path / "role-home"
             home.mkdir()
             (home / "config.toml").write_text(
@@ -235,7 +241,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
                    "--host", "codex-cli", "--execution-mode", "isolated-headless", "--topology", "controller-worker",
                    "--scheduler-owner", "outer_controller", "--prepare-selected-todo",
                    "--turn-instance-id", "direct-roles", "--timeout-seconds", "45", "--codex-bin", binary,
-                   "--controller-material", str(material), "--codex-sandbox", "workspace-write",
+                   material_option, str(material), "--codex-sandbox", "workspace-write",
                    "--validation-command-json", json.dumps(fixture["_validator_command"](expected))]
         completed = subprocess.run(cmd, cwd=project, env=env, timeout=85, capture_output=True, text=True)
         if entry == "receipt-repair":
@@ -252,7 +258,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
     assert not (tmp_path / "mcp-started").exists()
     assert "For your Core receipt:" in inputs[3]
     assert not any("For your Core receipt:" in inputs[i] for i in (0, 1, 4, 6))
-    assert inputs[1] == "Inspect the observation."
+    assert inputs[1] == (source_task if pinned_task else "Inspect the observation.")
     assert inputs[4] == "Copy the checked observation into the output file."
     assert len(inputs) == (8 if entry == "receipt-repair" else 7) and "Copy the checked observation" in inputs[4]
     assert all("work_contract" not in inputs[i] for i in (1, 2, 4, 5))
@@ -261,7 +267,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
         wake, = (tmp_path / "logs/wakes").iterdir()
         assert json.loads((wake / "receipt.json").read_text())["turn_execution"]["status"] == "committed"
     else:
-        assert "Read the supplied observation as a checksum." in inputs[0]
+        assert (source_task if pinned_task else "Read the supplied observation as a checksum.") in inputs[0]
         result = json.loads(completed.stdout)
         assert result["status"] == "committed" and result["host"]["topology"] == "controller-worker"
         start = cmd.index("--turn-instance-id")
@@ -272,7 +278,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
             changed = list(recovery)
             changed[changed.index(flag) + 1] = value
             if flag == "--topology":
-                offset = changed.index("--controller-material")
+                offset = changed.index(material_option)
                 del changed[offset:offset + 2]
             held = subprocess.run(changed, cwd=project, env=env, capture_output=True, text=True, timeout=15)
             assert held.returncode != 0 and "original Turn topology" in held.stdout + held.stderr

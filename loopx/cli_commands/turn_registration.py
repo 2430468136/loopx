@@ -175,7 +175,9 @@ def register_turn_commands(
         entry.add_argument("--topology", choices=("single-worker", "controller-worker"),
                            default="single-worker",
                            help="Execute with one Host session or a Controller and Worker on an isolated codex-cli Host.")
-    run_once.add_argument("--controller-material", type=Path,
+    material = run_once.add_mutually_exclusive_group()
+    material.add_argument("--task-material", type=Path, help="Original task for the Worker, forwarded verbatim after Controller dispatch.")
+    material.add_argument("--controller-material", type=Path,
                           help="An additional UTF-8 task file for the Controller (up to 128 KiB, pinned at admission).")
     run_once.add_argument("--project", required=True)
     run_once.add_argument("--prepare-selected-todo", action="store_true",

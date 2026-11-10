@@ -30,14 +30,20 @@ def controller_worker_launch(args, registry: Path, runtime: Path) -> tuple[list[
     for option, value in (("--model", args.codex_model), ("--effort", args.codex_reasoning_effort)):
         if value is not None:
             argv.extend([option, value])
-    material = getattr(args, "controller_material", None)
+    task_material = getattr(args, "task_material", None)
+    material = task_material or getattr(args, "controller_material", None)
     if material is not None:
         from ..control_plane.turn_driver.controller_worker import read_material
 
         source = material.expanduser().resolve(strict=True)
         if not source.is_file():
-            raise ValueError("Controller material must be a regular UTF-8 file")
-        argv.extend(["--material", str(source), "--material-sha256", hashlib.sha256(read_material(source)).hexdigest()])
+            raise ValueError("Role material must be a regular UTF-8 file")
+        data = read_material(source)
+        if task_material and not data.strip():
+            raise ValueError("Worker task material is empty")
+        argv.extend(["--material", str(source), "--material-sha256", hashlib.sha256(data).hexdigest()])
+        if task_material:
+            argv.append("--dispatch-task-material")
     # The deadline may shrink on recovery. Model, permissions, workspace and
     # private binding paths belong to the original admission.
     home = str(Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser().resolve())
