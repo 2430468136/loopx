@@ -112,8 +112,11 @@ def role_cli_options(role, host, timeout):
     if role == "worker" and host.sandbox != "read-only":
         # Shell here-documents, compilers and tempfile users need scratch space.
         # Use the existing write grant; the shared system temp directory stays denied.
-        config["shell_environment_policy"].setdefault("set", {}).update(
-            TMPDIR=str(host.project), TMP=str(host.project), TEMP=str(host.project))
+        shell = config["shell_environment_policy"]
+        scratch = {"TMPDIR": str(host.project), "TMP": str(host.project), "TEMP": str(host.project),
+                   "TMPPREFIX": str(host.project / ".zsh-tmp")}
+        shell.setdefault("set", {}).update(scratch)
+        shell["include_only"] = [*shell["include_only"], *scratch]
     config.update(approval_policy="never", features={
         "apps": False, "multi_agent": False, "multi_agent_v2": False, "hooks": False, "plugins": False,
         "remote_plugin": False, "browser_use": False, "computer_use": False, "goals": False, "js_repl": False,
