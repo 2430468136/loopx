@@ -282,6 +282,10 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
                 del changed[offset:offset + 2]
             held = subprocess.run(changed, cwd=project, env=env, capture_output=True, text=True, timeout=15)
             assert held.returncode != 0 and "original Turn topology" in held.stdout + held.stderr
+        changed_audience = list(recovery)
+        changed_audience[changed_audience.index(material_option)] = "--controller-material" if pinned_task else "--task-material"
+        held = subprocess.run(changed_audience, cwd=project, env=env, capture_output=True, text=True, timeout=15)
+        assert held.returncode != 0 and "original Turn topology" in held.stdout + held.stderr
         material.write_text("Changed task material.")
         held = subprocess.run(recovery, cwd=project, env=env, capture_output=True, text=True, timeout=15)
         assert held.returncode != 0 and "original Turn topology" in held.stdout + held.stderr

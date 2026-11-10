@@ -75,11 +75,11 @@ class RoleHost:
 
 
 def read_material(path: Path) -> bytes:
-    # This operator-supplied text enters the Controller context once per admission.
+    # The caller selects the audience and pins these exact UTF-8 bytes at admission.
     with path.open("rb") as stream:
         data = stream.read(128 * 1024 + 1)
     if len(data) > 128 * 1024:
-        raise ValueError("Controller material exceeds 128 KiB")
+        raise ValueError("Role material exceeds 128 KiB")
     data.decode("utf-8")
     return data
 
@@ -271,6 +271,8 @@ def run_roles(native, request, material=None, *, dispatch_task_material=False):
     prompt, result_schema = prepare_codex_controller_input(request)
     decision_schema = object_schema({"instruction": {"type": ["string", "null"]},
                                      "result": {"anyOf": [result_schema, {"type": "null"}]}})
+    if dispatch_task_material and not material:
+        raise ValueError("original Worker task material is missing")
     original_task = material if dispatch_task_material else None
     if original_task is not None:
         prompt += '\nThe caller supplied the Worker task below. Use instruction="dispatch" to send it unchanged.'
@@ -396,10 +398,10 @@ def serve(request, host):
     if host.material is not None:
         source = host.material.resolve(strict=True)
         if not source.is_file() or any(source.is_relative_to(path) for path in host.protected):
-            raise ValueError("Controller material overlaps protected state or is not a file")
+            raise ValueError("Role material overlaps protected state or is not a file")
         data = read_material(source)
         if hashlib.sha256(data).hexdigest() != host.material_sha256:
-            raise ValueError("Controller material changed after admission")
+            raise ValueError("Role material changed after admission")
         material = data.decode("utf-8")
     path = journal.parent / "controller-worker" / journal.name
     timeout = host.timeout
