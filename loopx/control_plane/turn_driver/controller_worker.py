@@ -7,10 +7,12 @@ import json
 import math
 import os
 import signal
+import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -18,8 +20,12 @@ from loopx.control_plane.effect_runtime import effect_runtime_result
 from loopx.control_plane.goals.first_party_host_admission import FirstPartyHostGoalAdmission
 from loopx.control_plane.quota.turn_envelope import COMPLETE_TURN_HOST_REQUEST_SCHEMA
 from loopx.control_plane.runtime.document_io import atomic_write_private_json
-from loopx.control_plane.turn_driver.codex_cli import codex_cli_result_schema, normalize_codex_result, prepare_codex_cli_input
-from loopx.control_plane.turn_driver.codex_stdio import StdioNativeGoalTransport, disable_mcp_servers
+from loopx.control_plane.turn_driver.codex_cli import (
+    CodexFailureObservation, _codex_command, codex_cli_event_session_id, codex_cli_result_schema,
+    normalize_codex_result, prepare_codex_cli_input,
+)
+from loopx.control_plane.turn_driver.codex_stdio import disable_mcp_servers
+from loopx.control_plane.turn_driver.host_process_transport import HostOutputLines, run_host_process
 from loopx.control_plane.turn_driver.decision_capture import read_turn_observation_text
 from loopx.control_plane.turn_driver.executor import MATERIAL_HOST_RESULT_KINDS
 from loopx.control_plane.turn_driver.host_candidate import extract_turn_work_identity
@@ -95,13 +101,49 @@ def role_policy(role, host):
     return profile, config
 
 
+def toml_value(value):
+    # Codex -c takes TOML, including quoted filesystem keys, never shell text.
+    if isinstance(value, dict):
+        return "{" + ", ".join(json.dumps(key) + " = " + toml_value(item) for key, item in value.items()) + "}"
+    return json.dumps(value)
+
+
+def role_cli_options(role, host, timeout):
+    _, config = role_policy(role, host)
+    config.update(approval_policy="never", features={
+        "apps": False, "multi_agent": False, "multi_agent_v2": False, "hooks": False, "plugins": False,
+        "remote_plugin": False, "browser_use": False, "computer_use": False, "goals": False, "js_repl": False,
+    })
+    # Native configuration can include project and managed MCP sources. Only
+    # names leave the discovery response; never persist its commands or secrets.
+    listing = subprocess.run([host.codex_bin, "mcp", "list", "--json"], cwd=host.project,
+                             capture_output=True, timeout=min(15, timeout))
+    if listing.returncode:
+        raise RuntimeError("cannot inspect configured Codex CLI tools")
+    servers = json.loads(listing.stdout)
+    if not isinstance(servers, list) or not all(isinstance(row, dict) and isinstance(row.get("name"), str)
+                                               and row["name"] for row in servers):
+        raise ValueError("invalid Codex CLI tool inventory")
+    config = disable_mcp_servers({"mcp_servers": {row["name"]: {} for row in servers}}, config)
+    return ("--ignore-rules", *(arg for key, value in config.items() for arg in ("-c", key + "=" + toml_value(value))))
+
+
+def cli_model_binding(host, thread):
+    # The exec JSONL stream identifies the thread. Read only the native model
+    # and provider chosen for that exact id; neither transcripts nor auth enter Core.
+    for db in sorted(host.codex_home.glob("state_*.sqlite"), reverse=True):
+        with closing(sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=1)) as conn:
+            row = conn.execute("SELECT model, model_provider, cwd, approval_mode FROM threads WHERE id=?",
+                               (thread,)).fetchone()
+        if row and row[0] and row[1] and Path(row[2]).resolve() == host.project and row[3] == "never":
+            return {"model": row[0], "modelProvider": row[1]}
+    raise RuntimeError("native role model binding unconfirmed")
+
+
 class RoleTransport:
-    def __init__(self, rpc, host, deadline, admission, evidence, save):
-        self.rpc, self.host = rpc, host
-        self.deadline, self.admission = deadline, admission
+    def __init__(self, host, deadline, admission, evidence, save):
+        self.host, self.deadline, self.admission = host, deadline, admission
         self.evidence, self.save = evidence, save
-        self.threads = {}
-        self.permissions = {}
 
     def remaining(self):
         seconds = self.deadline - time.monotonic()
@@ -109,120 +151,88 @@ class RoleTransport:
             raise TimeoutError("controller-worker Turn deadline")
         return seconds
 
-    def request(self, method, params):
-        self.rpc.response_timeout_sec = min(30, self.remaining())
-        return self.rpc.request(method, params)
-
-    def start(self, role, *, resume_thread=None):
-        cwd = str(self.host.project)
-        effective = self.request("config/read", {"cwd": cwd, "includeLayers": False})["config"]
-        config = {"web_search": "disabled", "project_doc_max_bytes": 0, "skills": {"include_instructions": False}}
-        params = {"cwd": cwd, "runtimeWorkspaceRoots": [cwd], "model": self.host.model,
-                  "approvalPolicy": "never"}
-        profile, policy = role_policy(role, self.host)
-        config.update(policy)
-        self.permissions[role] = profile
-        params["permissions"] = profile
-        config["features"] = {"apps": False, "multi_agent": False, "multi_agent_v2": False,
-                              "hooks": False, "browser_use": False, "computer_use": False,
-                              "goals": False, "js_repl": False}
-        params["config"] = disable_mcp_servers(effective, config)
-        binding = self.evidence.get("host_models", {}).get(role)
-        if resume_thread is not None:
-            if not isinstance(binding, dict) or not all(
-                isinstance(binding.get(key), str) and binding[key] for key in ("model", "modelProvider")
-            ):
-                raise RuntimeError("original Controller model binding unavailable")
-            params.update(threadId=resume_thread, excludeTurns=True,
-                          model=binding["model"], modelProvider=binding["modelProvider"])
-        with self.admission.launch_lifetime(operation="turn_role_thread_start"):
-            observed = self.request("thread/resume" if resume_thread is not None else "thread/start", params)
-        thread = observed["thread"]["id"]
-        if (not isinstance(thread, str) or not thread or thread in self.threads.values()
-                or (resume_thread is not None and thread != resume_thread)
-                or observed.get("approvalPolicy") != "never" or observed.get("runtimeWorkspaceRoots") != [cwd]
-                or (observed.get("activePermissionProfile") or {}).get("id") != profile):
-            raise RuntimeError("native role identity or permissions unconfirmed")
-        observed_model = {key: observed.get(key) for key in ("model", "modelProvider")}
-        if (not all(isinstance(value, str) and value for value in observed_model.values())
-                or (resume_thread is not None and observed_model != binding)):
-            raise RuntimeError("native role model binding unconfirmed")
-        self.evidence.setdefault("host_models", {})[role] = observed_model
-        self.threads[role] = thread
-        self.evidence["threads"][role] = thread
-        self.save()
+    def check_running(self):
+        self.remaining()
+        with self.admission.launch_lifetime(operation="turn_role_continue"):
+            pass
 
     def send(self, role, prompt, schema):
-        if role not in self.threads:
-            self.start(role)
-        thread = self.threads[role]
-        params = {"threadId": thread, "cwd": str(self.host.project),
-                  "input": [{"type": "text", "text": prompt}], "outputSchema": schema,
-                  "effort": self.host.effort, "approvalPolicy": "never"}
-        params["permissions"] = self.permissions[role]
-        began = time.monotonic()
-        with self.admission.launch_lifetime(operation="turn_role_turn_start"):
-            started = self.request("turn/start", params)
-        turn = started["turn"]["id"]
-        if not isinstance(turn, str) or not turn:
-            raise RuntimeError("native role Turn missing identity")
-        step = {"role": role, "turn_id": turn, "input_sha256": digest(prompt)}
+        threads = self.evidence["threads"]
+        previous = threads.get(role)
+        binding = self.evidence.get("host_models", {}).get(role)
+        options = role_cli_options(role, self.host, self.remaining())
+        if previous:
+            if self.evidence.get("transport") != "codex-exec" or binding != cli_model_binding(self.host, previous):
+                raise RuntimeError("original native role binding unavailable")
+            options += ("-c", "model_provider=" + toml_value(binding["modelProvider"]))
+        step = {"role": role, "command": "exec resume" if previous else "exec", "input_sha256": digest(prompt),
+                "thread_token_usage_total": None}
         self.evidence["steps"].append(step)
         self.save()
-        message = None
-        terminal = False
-        step["thread_token_usage_total"] = None
-        next_check = time.monotonic() + 1
+        seen = None
+        completed = False
+        failures = CodexFailureObservation()
+
+        def observe(line):
+            nonlocal seen, completed
+            event = json.loads(line)
+            candidate = codex_cli_event_session_id(event)
+            if candidate:
+                if (seen is not None or previous and candidate != previous
+                        or any(candidate == value for key, value in threads.items() if key != role)):
+                    raise RuntimeError("native role identity changed")
+                seen = threads[role] = candidate
+                self.save()
+            failures.observe_event(event)
+            if event.get("type") == "turn.completed":
+                if not seen or completed:
+                    raise RuntimeError("ambiguous native role completion")
+                completed = True
+                usage = event.get("usage") or {}
+                keys = ("input_tokens", "output_tokens")
+                if all(type(usage.get(k)) is int and usage[k] >= 0 for k in keys):
+                    step["thread_token_usage_total"] = {
+                        "totalTokens": sum(usage[k] for k in keys), "inputTokens": usage["input_tokens"],
+                        "outputTokens": usage["output_tokens"],
+                        **{dest: usage[src] for src, dest in (("cached_input_tokens", "cachedInputTokens"),
+                            ("reasoning_output_tokens", "reasoningOutputTokens")) if type(usage.get(src)) is int},
+                    }
+
+        began = time.monotonic()
         try:
-            while True:
-                event = self.rpc.next_event(timeout_sec=min(1, self.remaining()))
-                if time.monotonic() >= next_check:
-                    with self.admission.launch_lifetime(operation="turn_role_continue"):
-                        pass
-                    next_check = time.monotonic() + 1
-                if not event:
-                    continue
-                payload = event.get("params") or {}
-                native_turn = payload.get("turn") or {}
-                if payload.get("threadId") != thread or (payload.get("turnId") or native_turn.get("id")) != turn:
-                    continue
-                item = payload.get("item") or {}
-                if event.get("method") == "item/completed" and item.get("type") == "agentMessage":
-                    if item.get("phase") != "commentary":
-                        message = item.get("text")
-                if event.get("method") == "thread/tokenUsage/updated":
-                    total = (payload.get("tokenUsage") or {}).get("total")
-                    if isinstance(total, dict) and type(total.get("totalTokens")) is int:
-                        step["thread_token_usage_total"] = {key: value for key, value in total.items()
-                                                            if type(value) is int and value >= 0}
-                if event.get("method") == "turn/completed":
-                    terminal = True
-                    step["native_status"] = native_turn.get("status")
-                    if native_turn.get("status") != "completed" or native_turn.get("error"):
-                        # Keep native failures attributable without copying backend messages.
-                        error = native_turn.get("error") or {}
-                        code = error.get("codexErrorInfo")
-                        if isinstance(code, str):
-                            step["codex_error_info"] = code
-                        raise RuntimeError("native role Turn did not complete")
-                    if not isinstance(message, str) or len(message.encode()) > 128 * 1024:
-                        raise ValueError("missing or oversized native role result")
-                    result = json.loads(message)
-                    if not isinstance(result, dict):
-                        raise ValueError("invalid native role result")
-                    step["output_sha256"] = digest(result)
-                    return result
-        except BaseException:
-            # Cancellation must also work while the Controller has no model
-            # call running. Address the exact acknowledged native Turn.
-            if not terminal:
-                self.rpc.response_timeout_sec = 2
-                try:
-                    self.rpc.request("turn/interrupt", {"threadId": thread, "turnId": turn})
-                    step["interrupt_acknowledged"] = True
-                except Exception:
-                    step["interrupt_acknowledged"] = False
-            raise
+            with tempfile.TemporaryDirectory() as temp:
+                schema_path, output = Path(temp) / "schema.json", Path(temp) / "result.json"
+                schema_path.write_text(json.dumps(schema), encoding="utf-8")
+                command = _codex_command(codex_bin=self.host.codex_bin, project=self.host.project,
+                    schema_path=schema_path, output_path=output, sandbox=None, model=binding["model"] if previous
+                    else self.host.model, reasoning_effort=self.host.effort, session_id=previous,
+                    mcp_server=None, config_args=options)
+                events = HostOutputLines(observe)
+                diagnostics = HostOutputLines(failures.observe_stderr)
+                run = run_host_process(command, project=self.host.project, input_text=prompt,
+                    timeout_seconds=self.remaining(), on_stdout=events.feed, on_stderr=diagnostics.feed,
+                    launch_guard=lambda: self.admission.launch_lifetime(operation="turn_role_turn_start"),
+                    check_running=self.check_running)
+                events.finish()
+                diagnostics.finish()
+                if (run["outcome"] != "exited" or run["returncode"] != 0 or not run["output_complete"]
+                        or not events.complete or not completed or seen is None):
+                    step["native_status"] = run["outcome"] if run["outcome"] != "exited" else "failed"
+                    step["codex_error_info"] = failures.category(complete=diagnostics.complete)
+                    raise RuntimeError("native role Turn did not complete")
+                observed = cli_model_binding(self.host, seen)
+                if previous and binding != observed:
+                    raise RuntimeError("native role model binding changed")
+                self.evidence.setdefault("host_models", {})[role] = observed
+                with output.open("rb") as stream:
+                    data = stream.read(128 * 1024 + 1)
+                if len(data) > 128 * 1024:
+                    raise ValueError("oversized native role result")
+                result = json.loads(data)
+                if not isinstance(result, dict):
+                    raise ValueError("invalid native role result")
+                step.update(native_status="completed", output_sha256=digest(result))
+                return result
         finally:
             step["elapsed_seconds"] = round(time.monotonic() - began, 3)
             self.save()
@@ -280,7 +290,7 @@ def prepare_role_attempt(path, journal, request):
     if not path.exists():
         if "correction" in request["result_contract"]:
             raise RuntimeError("original role attempt requires reconciliation")
-        evidence = {"turn_key": request["turn_key"], "input_sha256": request_hash, "threads": {}, "steps": []}
+        evidence = {"transport": "codex-exec", "turn_key": request["turn_key"], "input_sha256": request_hash, "threads": {}, "steps": []}
         return evidence, evidence
 
     evidence = json.loads(path.read_text())
@@ -315,7 +325,6 @@ def correct_original_receipt(native, request, evidence):
     controller = evidence["threads"].get("controller")
     if not isinstance(controller, str) or not controller or controller == evidence["threads"].get("worker"):
         raise RuntimeError("original Controller identity unavailable")
-    native.start("controller", resume_thread=controller)
     feedback = request["result_contract"]["correction"]
     reply = native.send("controller", feedback + " Return the corrected typed Turn result.",
                         codex_cli_result_schema(request))
@@ -379,17 +388,11 @@ def serve(request, host):
         def save():
             atomic_write_private_json(path, evidence)
         save()
-        with StdioNativeGoalTransport.spawn(
-            [host.codex_bin, "app-server", "--listen", "stdio://"], cwd=str(project), env=os.environ.copy(),
-        ) as rpc:
-            native = RoleTransport(rpc, host, deadline, admission, evidence, save)
-            native.request("initialize", {"clientInfo": {"name": "loopx_turn", "version": "1"},
-                                         "capabilities": {"experimentalApi": True}})
-            rpc.notify("initialized", {})
-            if attempt is evidence:
-                result = run_roles(native, request, material)
-            else:
-                result = correct_original_receipt(native, request, evidence)
+        native = RoleTransport(host, deadline, admission, evidence, save)
+        if attempt is evidence:
+            result = run_roles(native, request, material)
+        else:
+            result = correct_original_receipt(native, request, evidence)
         attempt["result"] = result
         save()
         return result

@@ -747,35 +747,22 @@ def _codex_command(
     project: Path,
     schema_path: Path | None,
     output_path: Path | None,
-    sandbox: str,
+    sandbox: str | None,
     model: str | None,
     reasoning_effort: str | None,
     session_id: str | None,
     mcp_server: Mapping[str, Any] | None,
+    config_args: tuple[str, ...] = (),
 ) -> list[str]:
+    command = [codex_bin, "exec", "--skip-git-repo-check"]
+    if sandbox is not None and not session_id:
+        command.extend(["--sandbox", sandbox])
+    command.extend(["-C", str(project)])
     if session_id:
-        command = [
-            codex_bin,
-            "exec",
-            "--skip-git-repo-check",
-            "-C",
-            str(project),
-            "resume",
-            "-c",
-            f'sandbox_mode="{sandbox}"',
-            "--json",
-        ]
-    else:
-        command = [
-            codex_bin,
-            "exec",
-            "--skip-git-repo-check",
-            "--sandbox",
-            sandbox,
-            "-C",
-            str(project),
-            "--json",
-        ]
+        command.append("resume")
+        if sandbox is not None:
+            command.extend(["-c", f'sandbox_mode="{sandbox}"'])
+    command.extend(["--json", *config_args])
     if schema_path is not None:
         command.extend(["--output-schema", str(schema_path)])
     if output_path is not None:

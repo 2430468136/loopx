@@ -301,6 +301,7 @@ def run_host_process(
     delegated_lease: dict[str, Any] | None = None,
     environment: dict[str, str] | None = None,
     launch_guard: Callable[[], AbstractContextManager[None]] | None = None,
+    check_running: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Keep the control pipe open until exit; EOF cancels the owned process group.
 
@@ -309,6 +310,8 @@ def run_host_process(
     An owning admission guard covers request delivery through spawn observation,
     then releases before Host output; it must never lock the entire Host run.
     """
+    if check_running is not None and launch_guard is None:
+        raise ValueError("a running check requires guarded Host launch")
     request = _host_process_request(
         argv,
         project=project,
@@ -369,9 +372,19 @@ def run_host_process(
             else:
                 proc.stdin.write(frame)
                 proc.stdin.flush()
+            next_check = time.monotonic() + 1
             while True:
-                event = (guarded.next(deadline=launch_deadline) if guarded is not None
-                         else json.loads(line) if (line := next(proc.stdout, None)) is not None else None)
+                if guarded is not None and launch_deadline is None and check_running is not None and result is None:
+                    if time.monotonic() >= next_check:
+                        check_running()
+                        next_check = time.monotonic() + 1
+                    try:
+                        event = guarded.next(deadline=next_check)
+                    except TimeoutError:
+                        continue
+                else:
+                    event = (guarded.next(deadline=launch_deadline) if guarded is not None
+                             else json.loads(line) if (line := next(proc.stdout, None)) is not None else None)
                 if event is None:
                     break
                 kind = event.get("kind")

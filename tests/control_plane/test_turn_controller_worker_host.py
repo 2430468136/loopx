@@ -14,39 +14,31 @@ import pytest
 from loopx.control_plane.turn_driver import controller_worker as roles
 
 
-@pytest.mark.parametrize("on_stop", [True, False], ids=["operator-stop", "terminal-error"])
-def test_stop_addresses_only_the_active_native_turn(on_stop, tmp_path):
-    class Endpoint:
-        def __init__(self):
-            self.interrupts = []
-
-        def request(self, method, params):
-            if method == "turn/start":
-                return {"turn": {"id": "active"}}
-            assert method == "turn/interrupt"
-            self.interrupts.append(params)
-            raise RuntimeError("interrupt acknowledgement unavailable")
-
-        def next_event(self, *, timeout_sec):
-            if on_stop:
-                raise InterruptedError("stopped")
-            return {"method": "turn/completed", "params": {
-                "threadId": "original-worker", "turn": {"id": "active", "status": "failed"}}}
+def test_revoked_role_drains_silent_exec_process(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    pid_file = project / "pid"
+    binary = tmp_path / "codex"
+    binary.write_text(f"#!{sys.executable}\nimport os,pathlib,time\n"
+                      "pathlib.Path('pid').write_text(str(os.getpid()))\ntime.sleep(45)\n")
+    binary.chmod(0o700)
+    monkeypatch.setattr(roles, "role_cli_options", lambda *args: ())
 
     class Admission:
         def launch_lifetime(self, *, operation):
+            if operation == "turn_role_continue":
+                raise InterruptedError("operator stop")
             return nullcontext()
 
-    rpc = Endpoint()
-    state = {"steps": []}
-    native = roles.RoleTransport(rpc, roles.RoleHost(tmp_path, tmp_path, tmp_path, tmp_path, "codex", None, "low", "read-only", 5),
-                                 time.monotonic() + 5, Admission(), state, lambda: None)
-    native.threads["worker"] = "original-worker"
-    native.permissions["worker"] = "workspace"
-    with pytest.raises(InterruptedError if on_stop else RuntimeError, match="stopped|did not complete"):
+    host = roles.RoleHost(project, tmp_path / "runtime", tmp_path / "registry", tmp_path / "home",
+                          str(binary), None, "low", "read-only", 10)
+    state = {"threads": {}, "steps": []}
+    native = roles.RoleTransport(host, time.monotonic() + 10, Admission(), state, lambda: None)
+    with pytest.raises(InterruptedError, match="operator stop"):
         native.send("worker", "check", {})
-    assert rpc.interrupts == ([{"threadId": "original-worker", "turnId": "active"}] if on_stop else [])
-    assert state["steps"][0]["thread_token_usage_total"] is None
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
+    assert len(state["steps"]) == 1 and state["steps"][0]["thread_token_usage_total"] is None
 
 
 @pytest.mark.parametrize("permission", ["danger-full-access", "read-only"])
@@ -155,6 +147,14 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
 
     binary = shutil.which("codex")
     assert binary, "Install the Codex CLI before enabling native role qualification"
+    invocations = tmp_path / "cli-invocations"
+    wrapper = tmp_path / "observed-codex"
+    wrapper.write_text(f"#!{sys.executable}\nimport os,sys\nargs = sys.argv[1:]\n"
+                       f"with open({str(invocations)!r}, 'a') as f:\n"
+                       "    print('exec resume ' + args[-2] if 'resume' in args else args[0], file=f)\n"
+                       f"os.execv({binary!r}, [{binary!r}, *args])\n")
+    wrapper.chmod(0o700)
+    binary = str(wrapper)
     with local_inference_provider(respond) as (url, _, _):
         env = dict(os.environ, HOME=str(tmp_path / "home"), PYTHONPATH=str(src),
             LOOPX_CLI=str(Path(sys.executable).parent / "loopx"), CODEX_BIN=binary, MODEL_NAME="gpt-5.4",
@@ -227,7 +227,13 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
         assert held.returncode != 0 and "original Turn topology" in held.stdout + held.stderr
     record, = (runtime / "goals" / goal / "turns/controller-worker").glob("*.json")
     observation = json.loads(record.read_text())
+    assert observation["transport"] == "codex-exec"
     assert len(set(observation["threads"].values())) == 2
+    actual = invocations.read_text().splitlines()
+    assert "app-server" not in actual
+    expected_execs = ["exec", "exec"] + ["exec resume " + observation["threads"][role]
+        for role in (["controller", "worker", "controller"] + (["controller"] if entry == "receipt-repair" else []))]
+    assert [line for line in actual if line.startswith("exec")] == expected_execs
     expected_roles = ["controller", "worker", "controller", "worker", "controller"]
     if entry == "receipt-repair":
         expected_roles.append("controller")
