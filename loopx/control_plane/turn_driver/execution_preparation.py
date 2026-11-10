@@ -1,6 +1,7 @@
 """Transport the ordinary managed claim selected by the typed quota owner."""
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
@@ -119,7 +120,10 @@ def run_json(
     return payload
 
 
-def execute_ordinary_claim(arguments, *, operation_id, registry_path, runtime_root, cwd, timeout, runner=default_runner):
+def execute_ordinary_claim(
+    arguments: Sequence[str], *, operation_id: str, registry_path: Path, runtime_root: Path,
+    cwd: Path, timeout: float, runner: CommandRunner = default_runner,
+) -> None:
     """Execute the quota owner's exact public claim and verify the returned operation."""
     claimed = run_json(arguments, registry_path=registry_path, runtime_root=runtime_root,
                        cwd=cwd, timeout=timeout, runner=runner)
@@ -127,11 +131,11 @@ def execute_ordinary_claim(arguments, *, operation_id, registry_path, runtime_ro
         raise RuntimeError("Native execution preparation did not recover its original managed claim")
 
 
-def prepare_selected_turn_todo(decision, *, goal_id, agent_id, selected_todo_id, turn_instance_id,
-                               registry_path, runtime_root, cwd, timeout):
+def prepare_selected_turn_todo(
+    decision: Mapping[str, Any], *, goal_id: str, agent_id: str, selected_todo_id: str | None,
+    turn_instance_id: str | None, registry_path: Path, runtime_root: Path, cwd: Path, timeout: float,
+) -> str | None:
     """The fresh Turn decision owns selection. The caller rereads it before dispatch."""
-    import hashlib
-
     preparation = compact_execution_preparation_request(decision)
     if preparation is None:
         return None
@@ -140,7 +144,7 @@ def prepare_selected_turn_todo(decision, *, goal_id, agent_id, selected_todo_id,
     if (not turn_instance_id or decision.get("should_run") is not True
             or (preparation["goal_id"], preparation["agent_id"]) != (goal_id, agent_id)
             or preparation["authority_route"] != route
-            or selected_todo_id is not None and selected_todo_id != todo
+            or (selected_todo_id is not None and selected_todo_id != todo)
             or preparation.get("turn_instance_id", turn_instance_id) != turn_instance_id):
         raise ValueError("ordinary claim belongs to another Turn, Todo or authority route")
     identity = json.dumps([goal_id, agent_id, todo, turn_instance_id], separators=(",", ":")).encode()

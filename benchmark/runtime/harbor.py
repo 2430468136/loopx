@@ -294,6 +294,16 @@ class BenchmarkCodex(CodexOffline):
     async def install(self, environment: BaseEnvironment) -> None:
         await self._capture_task_path(environment)
         await super().install(environment)
+        if self.execution.controller_worker:
+            # Probe the staged CLI as the actual solver user before loading
+            # trial credentials or paying for a role that cannot run tools.
+            probe = await environment.exec(
+                command="/usr/local/bin/codex sandbox -P :workspace -- /bin/sh -c 'exit 0'",
+                timeout_sec=30,
+            )
+            if probe.return_code:
+                raise RuntimeError("Controller–Worker requires a working native Codex workspace sandbox "
+                                   "inside the task guest; check guest kernel and namespace support")
 
         loopx_src = Path(os.environ["LOOPX_SRC_DIR"]).resolve()
         node_root = Path(os.environ["LOOPX_NODE_DIR"]).resolve()

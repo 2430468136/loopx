@@ -118,3 +118,24 @@ def test_registration_preparation_failure_prevents_native_admission(native_cli, 
     assert events == ["prepare"]
     receipt = json.loads((trial / "runtime-receipt.json").read_text())
     assert receipt["status"] == "runner_failed" and receipt["error_kind"] == "RuntimeError"
+
+
+@pytest.mark.parametrize("topology,profile", [
+    ("single-worker", "turn-resume"),
+    ("controller-worker", "turn-controller-worker"),
+])
+def test_heartbeat_entry_records_effective_turn_arm(native_cli, monkeypatch, topology, profile):
+    run, args, trial = native_cli
+    monkeypatch.setattr(run, "RecordingDockerBackend", lambda **kw: SimpleNamespace(
+        observe_local_images=lambda **keys: {}, image_exists=lambda image: True,
+        registration_options=lambda provider: {}))
+    def stop(**kwargs):
+        raise RuntimeError("trial prepared")
+    monkeypatch.setattr(run, "run_agent", stop)
+    with pytest.raises(RuntimeError, match="trial prepared"):
+        run.main([*args, "--worker", "heartbeat-resume", "--turn-topology", topology,
+                  "--validation-command-json", '["check"]', "--container-cpus", "2"])
+    receipt = json.loads((trial / "runtime-receipt.json").read_text())
+    assert (receipt["requested_worker"], receipt["worker"]) == ("heartbeat-resume", profile)
+    assert receipt.get("turn_topology", "single-worker") == topology
+    assert receipt["container_cpus"] == 2

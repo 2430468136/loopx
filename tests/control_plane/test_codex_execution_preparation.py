@@ -204,3 +204,19 @@ def test_executor_does_not_run_a_claim_without_live_binding(tmp_path: Path, faul
             capture_directory=capture, context_directory=native,
             runner=lambda *_args, **_kwargs: pytest.fail("unbound preparation must not run a subprocess"),
         )
+
+
+def test_turn_claim_refuses_a_changed_scope_before_effect(tmp_path, monkeypatch):
+    from loopx.control_plane.turn_driver import execution_preparation as owner
+
+    decision = _packet(tmp_path)
+    def unexpected(*args, **kwargs):
+        pytest.fail("a mismatched route, selected Todo or wake cannot claim")
+    monkeypatch.setattr(owner, "execute_ordinary_claim", unexpected)
+    kwargs = dict(goal_id=GOAL, agent_id=AGENT, selected_todo_id=TODO,
+                  registry_path=Path(decision["registry"]), runtime_root=Path(decision["runtime_root"]),
+                  cwd=tmp_path, turn_instance_id="turn-example", timeout=3)
+    for different in ({"agent_id": "other"}, {"selected_todo_id": "another"},
+                      {"turn_instance_id": "later"}, {"registry_path": tmp_path / "other-registry"}):
+        with pytest.raises(ValueError, match="another Turn"):
+            owner.prepare_selected_turn_todo(decision, **(kwargs | different))

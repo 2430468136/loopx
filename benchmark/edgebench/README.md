@@ -174,8 +174,8 @@ network or access to the trial's Core state. A narrower caller sandbox still app
 The guest needs a Codex App Server with named filesystem permissions and a kernel
 that can enforce them. An unsupported sandbox holds the affected work.
 
-From the heartbeat trial entry, specify `--worker heartbeat-resume --turn-topology
-single-worker` or `--worker heartbeat-resume --turn-topology controller-worker` and
+From the heartbeat trial entry, specify
+`--worker heartbeat-resume --turn-topology single-worker` or `--worker heartbeat-resume --turn-topology controller-worker` and
 supply the same validator. Both use the existing heartbeat scheduler, quota decision
 and public Turn transaction. The unqualified heartbeat profile keeps its native
 context transport for baseline comparisons. Receipts distinguish the requested

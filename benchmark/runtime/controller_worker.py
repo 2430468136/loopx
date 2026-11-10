@@ -22,6 +22,7 @@ from loopx.control_plane.quota.turn_envelope import COMPLETE_TURN_HOST_REQUEST_S
 from loopx.control_plane.runtime.document_io import atomic_write_private_json
 from loopx.control_plane.turn_driver.codex_cli import normalize_codex_result, prepare_codex_cli_input
 from loopx.control_plane.turn_driver.codex_stdio import StdioNativeGoalTransport
+from loopx.control_plane.turn_driver.executor import MATERIAL_HOST_RESULT_KINDS
 from loopx.control_plane.turn_driver.host_candidate import extract_turn_work_identity
 from loopx.control_plane.turn_driver.journal_store import turn_journal_path
 from loopx.file_lock import try_exclusive_file_lock
@@ -44,9 +45,12 @@ def role_policy(role, project, env, capture):
     # Start from the same workspace-only native permission owner as project
     # conversations. Preserve the guest's task root and exclude Core state.
     writable = role == "worker" and env["LOOPX_CODEX_SANDBOX"] != "read-only"
-    identity = effect_runtime_result("collaboration.project.session_identity", {"context": {
+    context = {
         "kind": "project_workspace", "workspace_path": str(project), "project_ref": digest(str(project))[:24],
-        "audience": "local_owner", "grant": "workspace_write" if writable else "workspace_read", "filesystem_scope": "workspace_only"}})
+        "audience": "local_owner", "grant": "workspace_write" if writable else "workspace_read",
+        "filesystem_scope": "workspace_only",
+    }
+    identity = effect_runtime_result("collaboration.project.session_identity", {"context": context})
     profile = identity["permissions_profile"]
     config = identity["host_config"]
     filesystem = config["permissions"][profile]["filesystem"]
@@ -160,7 +164,13 @@ class RoleTransport:
                                                             if type(value) is int and value >= 0}
                 if event.get("method") == "turn/completed":
                     terminal = True
+                    step["native_status"] = native_turn.get("status")
                     if native_turn.get("status") != "completed" or native_turn.get("error"):
+                        # Keep native failures attributable without copying backend messages.
+                        error = native_turn.get("error") or {}
+                        code = error.get("codexErrorInfo")
+                        if isinstance(code, str):
+                            step["codex_error_info"] = code
                         raise RuntimeError("native role Turn did not complete")
                     if not isinstance(message, str) or len(message.encode()) > 128 * 1024:
                         raise ValueError("missing or oversized native role result")
@@ -200,8 +210,8 @@ def run_roles(native, request):
         if result is not None:
             if instruction is not None or not isinstance(result, dict):
                 raise ValueError("controller returned ambiguous decision")
-            if index == 0 and result.get("result_kind") == "validated_progress":
-                raise ValueError("controller claimed progress without a Worker return")
+            if index == 0 and result.get("result_kind") in MATERIAL_HOST_RESULT_KINDS:
+                raise ValueError("controller returned a material result without a Worker return")
             return normalize_codex_result(request, result)
         if index == 3 or not isinstance(instruction, str) or not instruction.strip() or len(instruction) > 16000:
             raise ValueError("controller exhausted delegation or returned an invalid task")
