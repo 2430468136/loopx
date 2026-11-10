@@ -200,14 +200,14 @@ The benchmark passes the topology to the public Turn provider. Other callers use
 with their own project, Goal, validator and phase budget.
 
 Use the same task, validator and model with `--worker turn-controller-worker` to
-run two fresh native Codex threads inside the admitted Turn. The Controller can
-read the captured contract, its original decision and the task. It gives the Worker
-a task brief, reviews the finding and artifact paths, and can give corrective
-instructions to the same Worker. The adapter allows up to three Worker segments
-in one admission. Worker tools run under a named workspace permission with no
-network or access to the trial's Core state. A narrower caller sandbox still applies.
-The guest needs a Codex App Server with named filesystem permissions and a kernel
-that can enforce them. An unsupported sandbox holds the affected work.
+run two fresh Codex CLI sessions inside the admitted Turn. The Controller sees
+the captured decision and task. On its first dispatch the Host passes the
+pinned task file to the Worker verbatim. After the Worker returns a finding and
+artifact paths, the Controller can request further work on the original Worker
+session while the admission and phase budget remain live, or send its receipt
+to Core. Both roles use `codex exec` and resume by exact session ID.
+The guest needs a kernel that supports the native Codex CLI filesystem sandbox.
+The sandbox enforces the two roles' file and tool grants at execution.
 
 From the heartbeat trial entry, specify
 `--worker heartbeat-resume --turn-topology single-worker` or `--worker heartbeat-resume --turn-topology controller-worker` and

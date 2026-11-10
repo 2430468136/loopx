@@ -720,7 +720,7 @@ also needs installed Codex, the native Harbor backend and independently checked
 task output. Unit tests establish no score or model-uplift claim. Validate small
 jobs through each benchmark's native configuration before launching a study.
 
-By default, worker calls have no independent turn deadline. Harbor derives their available time from the remaining total phase budget, reserving cleanup and settlement time. An explicit `turn_timeout_sec` remains supported as an operator override.
+By default, Harbor gives heartbeat and Turn workers the remaining phase time. Native Goal retains its runtime reserve. An explicit `turn_timeout_sec` can shorten the Host window. Process cleanup can finish after the model deadline.
 
 ### Native SForge task entry
 
