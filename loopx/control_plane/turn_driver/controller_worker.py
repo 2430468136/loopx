@@ -24,7 +24,6 @@ from loopx.control_plane.turn_driver.codex_cli import (
     CodexFailureObservation, _codex_command, codex_cli_event_session_id, codex_cli_result_schema,
     normalize_codex_result, prepare_codex_cli_input,
 )
-from loopx.control_plane.turn_driver.codex_stdio import disable_mcp_servers
 from loopx.control_plane.turn_driver.host_process_transport import HostOutputLines, run_host_process
 from loopx.control_plane.turn_driver.decision_capture import read_turn_observation_text
 from loopx.control_plane.turn_driver.executor import MATERIAL_HOST_RESULT_KINDS
@@ -124,8 +123,11 @@ def role_cli_options(role, host, timeout):
     if not isinstance(servers, list) or not all(isinstance(row, dict) and isinstance(row.get("name"), str)
                                                and row["name"] for row in servers):
         raise ValueError("invalid Codex CLI tool inventory")
-    config = disable_mcp_servers({"mcp_servers": {row["name"]: {} for row in servers}}, config)
-    return ("--ignore-rules", *(arg for key, value in config.items() for arg in ("-c", key + "=" + toml_value(value))))
+    # A table replacement would remove required native command/url fields.
+    # Override each enabled leaf in place, including names containing dots.
+    overrides = [key + "=" + toml_value(value) for key, value in config.items()]
+    overrides.extend("mcp_servers." + json.dumps(row["name"]) + ".enabled=false" for row in servers)
+    return ("--ignore-rules", *(arg for override in overrides for arg in ("-c", override)))
 
 
 def cli_model_binding(host, thread):

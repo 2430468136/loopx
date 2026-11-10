@@ -178,6 +178,8 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
             (home / "config.toml").write_text(
                 f'model="gpt-5.4"\nmodel_reasoning_effort="low"\nmodel_provider="local"\n[model_providers.local]\nname="local"\nbase_url="{url}"\n'
                 'wire_api="responses"\nenv_key="OPENAI_API_KEY"\n'
+                '[mcp_servers."unused.fixture"]\ncommand="/bin/sh"\n'
+                f'args=["-c", "touch {tmp_path / "mcp-started"}"]\n'
             )
             env = {k: v for k, v in os.environ.items() if not k.startswith("LOOPX_")}
             env.update(CODEX_HOME=str(home), OPENAI_API_KEY="fixture", PYTHONPATH=str(src), LOOPX_USAGE_PING="0")
@@ -200,6 +202,7 @@ def test_real_native_feedback_changes_the_checked_artifact(tmp_path, entry):
             completed = subprocess.run(retry, cwd=project, env=env, timeout=85, capture_output=True, text=True)
             assert (project / marker).stat().st_mtime_ns == original_worker_write
         assert completed.returncode == 0, completed.stdout[-2200:] + completed.stderr[-500:]
+    assert not (tmp_path / "mcp-started").exists()
     assert len(inputs) == (8 if entry == "receipt-repair" else 7) and "Copy the checked observation" in inputs[4]
     assert all("work_contract" not in inputs[i] for i in (1, 2, 4, 5))
     assert (project / marker).read_text() == expected
