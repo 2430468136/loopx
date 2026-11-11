@@ -4,7 +4,7 @@
 - **Delivery maturity:** Proposal
 - **Authors / owners:** LoopX maintainers
 - **Created:** 2026-09-26
-- **Last normative revision:** 2026-10-29
+- **Last normative revision:** 2026-11-12
 - **Implementation baseline:** packaging inventory `2f3d13ae9`; runtime composition audit `9cae3b28939f72fa4aadab5cfe49e19bcbdab372`
 - **Related contracts:** [TypeScript Control-Plane Migration v0](typescript-control-plane-migration-v0.md), [Extensions reference](../../reference/extensions.md), [Capability catalog](../../../loopx/capabilities/README.md), [Overall Roadmap v0](loopx-overall-roadmap-v0.md) (S2, S8, S12), [import-boundary tests](../../../tests/architecture/test_control_plane_import_boundaries.py)
 - **Tracking issue:** [#5072](https://github.com/loopx-project/loopx/issues/5072)
@@ -35,7 +35,7 @@ retain their original baselines.
    wheel is replaced over time by `loopx-core`, `loopx-workspace`, and
    per-capability packages under `packages/`, with `loopx` retained as a
    meta-package that depends on all of them.
-3. **Top-level regrouping happens before any packaging change.** `loopx/chat_*`
+3. **Regroup the selected dependency closure as needed for packaging.** `loopx/chat_*`
    moves to `loopx/chat/`, `loopx/*_goal_mode/` moves to `loopx/hosts/`, with
    compatibility re-exports for established public imports for at least one minor
    release. Internal-only callers move together and the old internal entry is deleted.
@@ -62,6 +62,37 @@ activated services and model-visible context. The package table defines what
 can be installed, not what every command must load. Installing standard grants
 no service activation or permission. Existing defaults and machine-enforced
 work obligations remain until a qualified, explicitly disclosed migration.
+
+### Immediate delivery priority and low-friction use
+
+The next outcome is **a separately installable minimal kernel that executes a
+bounded task, survives interruption and returns its verified result**. Pair R1
+with the required core-artifact slice of M3; ship directory ownership, module
+ratchets and demand loading as needed for that path. Unrelated M1/M2 moves,
+workspace packaging, a complete capability migration and a new Controller
+session must not become prerequisites. Full M3 acceptance still requires its
+named distributions and compatibility evidence. Source-only execution, an empty
+wrapper depending on the monolith, or relabelling the full installation as core
+does not qualify the standalone artifact.
+
+The design question is whether roughly **10% of the control-plane complexity can cover 90%
+of the work the current product can complete**. This is a reduction hypothesis, not a measured result,
+code-deletion quota or permission to drop obligations. Identify the retained
+mechanisms and the omitted specializations against a versioned baseline; name
+the workload, denominator, outcomes and complete costs before claiming coverage.
+Report coverage of the declared current user journeys, both with the kernel
+alone and with selected specializations. Keep ordinary single-Agent engineering
+and knowledge tasks, a constraint change and interrupted recovery in the
+comparison. Do not remove specialized journeys from the denominator to claim
+90% coverage; benchmark scores cannot stand in for functional coverage.
+
+An ordinary caller should provide a task and its consequential constraints,
+then obtain progress, a usable result or an actionable exception. The Agent/host
+prepares identities, source references and existing transaction commands. Do not
+require the user to learn Vision, Quota, Lease, Yardstick, Stride, a preset editor
+or a board before useful work. Show a permission decision, exhausted budget,
+uncertain effect or unavailable provider when it affects that task; plain-language
+presentation must preserve the exact underlying fact and recovery route.
 
 ## 2. Problem and motivation
 
@@ -172,7 +203,10 @@ use the same boundaries without becoming mandatory startup dependencies.
 - Splitting into multiple Git repositories (see Section 6 and Appendix D).
 - Changing licences per distribution; all tiers remain Apache-2.0 unless a
   separate licensing RFC decides otherwise.
-- Any change to kernel semantics, TS migration order, or stable protocols.
+- Implicit weakening of canonical authority, required invariants, TS migration
+  order or stable wire contracts. Optional-method dependency/context cuts use
+  their existing owners and need explicit parity/rollback qualification; this
+  RFC alone changes no current default or schema.
 - Removing legacy compatibility facades (`loopx.status`, `loopx.quota`); their
   retirement stays governed by the migration RFC.
 - A new model loop, scheduler, plugin system, memory database, benchmark-native
@@ -269,12 +303,50 @@ contract into prose guidance. The kernel is a cohesive set of domains, not one
 large file. The adjacent refactor should localize the next change and preserve
 characterized behavior.
 
+### Required invariants, optional methods and providers
+
+The kernel retains the minimum mechanisms for durable work, legal scoped
+actions, accepted evidence and recovery. Bench, workbench and manager own the
+specialized orchestration and presentation beyond that boundary. They consume
+the same kernel; they are not mandatory layers of an ordinary task. Their
+failure or absence must not prevent independent authorized core work. These
+are product/task compositions, not new state authorities: reusable methods stay
+with their capability owners and interfaces remain projections.
+
+**Yardstick is an optional decision method, not a runtime provider or a required
+kernel stage.** The same distinction applies when classifying Stride, Explore
+and reflection/recall policies. A method chooses how to reason, measure,
+compare or revise work; a provider supplies execution, storage, model, transport
+or a concrete measurement implementation. A local method may need no external
+provider, and several methods may use the same provider. Do not model every
+optional method as a new provider, register a plugin merely to make a toggle,
+or add a parallel method registry. Reuse each existing capability owner and its
+configuration/lifecycle contract; Yardstick keeps its existing independent
+`yardstick_enabled` setting and default-off boundary.
+
+Ordinary result validation remains necessary when Yardstick is off. Choosing or
+calibrating a proxy, fidelity studies and joint target/yardstick search are
+optional methodology; legal effects, the user's acceptance and evidence
+integrity remain kernel obligations. Enabling an Explore view or installing a
+provider does not enable Yardstick. Configured obligations and historical
+records stay valid; this design does not silently change current defaults or
+remove fields. A default or owner migration requires its own behavior parity,
+readback and rollback evidence.
+
+The 10% target concerns forced concepts, protocol/decision steps, model reads,
+background services and maintenance/dependency burden, reported separately.
+It is not 10% of filenames or a shorter prompt with the same mandatory ceremony.
+For every retained mechanism, show which necessary outcome or invariant it
+protects; for every specialization, show that core execution/recovery works
+without loading, activating or injecting it. Keep these checks in the existing
+V1–V5/V10 qualification rather than creating another governance framework.
+
 ### Presets over the distribution tiers
 
 | Composition | Required content | Explicit optional content |
 | --- | --- | --- |
 | Minimal | Bootstrap, same governance implementation, one supported authority provider, one qualified execution path, compact status/result readback and recovery | Task capabilities, persistent recall, observers, connectors, workspace UI |
-| Standard | Same kernel and compatible ordinary-product composition | Load/activate only the capabilities, hosts, UI/IM services and connectors required by the chosen workflow |
+| Standard | Same kernel plus the small, named everyday capability selection below | Load/activate only the selected capability and its required providers; workspace UI, IM and connectors remain optional |
 | Research configuration | Pinned minimal or standard composition plus a declared experiment overlay | Only instrumentation or ablations named in the experimental design |
 
 The `loopx` meta-package retains installation compatibility; installed standard
@@ -283,11 +355,74 @@ flag applied after standard fully initializes. A host-free read-only kernel
 library does not qualify that executable preset. Exact contents and the first
 supported host/authority combination are D2/D5 decisions.
 
+**Initial Standard selection:** distribute three existing capabilities for
+continuing ordinary work, delivering a repository change and checking a PR.
+They do not acquire core status merely by shipping together.
+
+| Caller outcome | Existing capability / owner | Activation boundary |
+| --- | --- | --- |
+| Resume with relevant prior guidance | `agent-turn-recall` / `capabilities/agent_turn_recall` | Cold preview without provider access; recall only with the existing explicit configuration and authorized source |
+| Take an issue through a validated change | `issue-fix` / `capabilities/issue_fix` | Load the requested workflow; execution, external reads/writes and publication retain their own authorization |
+| Review a proposed change before delivery | `pull-request-review` / `capabilities/pr_review_queue` | Explicit review/readiness entry; no queue watcher, review publication or merge from installation |
+
+These are existing `builtin` capabilities currently registered against provider
+`loopx-core`; that packaging/provider label does not make their domain strategy
+mandatory governance. Preserve their current `active-preview` maturity and
+default-off settings. The selection is a proposed Standard install closure,
+not a claim that the existing monolithic `loopx` wheel already excludes other
+capabilities. Implement their package/import boundaries through the existing
+registry and lifecycle, then qualify R2 against the selected installation.
+No second preset executor, provider id or enable switch is introduced. A caller
+requests the task through the existing entry; the host loads the relevant owner
+when its current readiness and admission permit it. Do not add a Standard setup
+wizard, require users to name internal methods, or infer activation through a
+keyword classifier. Missing prerequisites surface only when that task needs
+them. Basic recovery remains in Minimal even when advisory recall is absent. Yardstick,
+Stride, Explore, benchmark instrumentation and manager routing remain explicit
+optional additions; the three Standard capabilities must work without them.
+A supported generic host is composed independently, and installation never
+starts another model session or grants source access.
+
 Keep composition, managed/attached mode, host provider, one/two model sessions,
 storage provider and benchmark arm independent. Minimal does not imply attached,
 standard does not require two model sessions, and research does not mean
 ungoverned. Publish only tested combinations and preserve existing mode defaults;
 changing composition must not silently change a binding's execution owner.
+
+### Minimal mechanism and scenario specialization
+
+The reusable mechanism is: retain the work's intent and constraints; execute
+through one admitted host; record evidence and the continuation/recovery point.
+These are responsibilities over existing typed owners, not three new records,
+a replacement protocol or another loop. Deterministic code owns identities,
+authority, stop, budget, receipts and replay. The model owns task reasoning,
+choice of approach and interpretation of evidence. Do not make it repeatedly
+reconstruct bookkeeping that the host can carry and the kernel can validate.
+
+| Caller / task | Shared mechanism | Only when this scenario needs it |
+| --- | --- | --- |
+| Ordinary single-Agent work | Durable intent/constraints, one execution path, evidence, recovery and result readback | Optional Yardstick/Stride, planning/recall/review methods; no mandatory research board or peer setup |
+| Benchmark | Same work/authority and host | Existing toolkit isolation, frozen arms, native evaluator and full cost collection |
+| Research workbench | Same work/authority and evidence | Explore hypotheses, experiments, comparisons and research presentation |
+| Manager / peer team | Same work/authority and recovery | Existing request routing, peer discovery, claims/leases, scoped handoff, adoption and return |
+| App / IM / external operation | Same accepted work and effect identity | Selected UI/transport, audience checks, provider readback and operation-specific interlocks |
+
+A specialization reuses its capability/provider owner and is installed, loaded,
+activated and projected independently. This table does not create new preset
+ids or disable a configured obligation. Classify each dependency as a required
+owner, compatibility dependency, optional specialization or migration debt;
+record why retained debt is reachable rather than calling it minimal by default.
+A single-Agent run still obeys current claim/lease rules. Moving a strategy out
+of the default path needs separate parity and disclosed migration evidence.
+
+Low-friction delivery applies to users **and** model input: supply the current
+task, applicable constraints, evidence needed for the decision and the next
+available operation; keep stable bookkeeping in host-owned bindings. Detail
+remains reachable on demand. Replanning, a changed constraint, handoff and
+recovery expand the relevant context; they do not inject every capability's
+instructions into every ordinary turn. Reuse the existing Progressive/Delta
+owner and fresh authority checks; no keyword classifier, new context database,
+blanket truncation or extra controller is introduced by this design.
 
 ### Supported host integration decision
 
@@ -597,8 +732,8 @@ owner. Capacity/backpressure and recovery retain existing work/host contracts.
 | R0 | Characterized `performance-diagnosis` selected route and measured loading seam | Current route/owner/dependency map; D6 measurement decision; independent of package publication | V1/V3 for this route, V10 baseline; unchanged behavior | Revert route extraction |
 | M1 | `loopx/chat_*` → `loopx/chat/` with I3 compatibility; budget lowered by net reduction | M0 | Section 9 rows 1–2 | revert |
 | M2 | `loopx/*_goal_mode` → `loopx/hosts/` with I3 compatibility | M0 | rows 1–2 | revert |
-| M3 | `loopx-core` + `loopx-workspace` + meta `loopx` published as pre-release; Node as extra or bundle per D1 | M1, M2; D1 decided; selected D2/D5 composition mapped | rows 3–4, 7; repeat qualified R1/R2 journeys against clean split-package install | Unpublish pre-release |
-| R1 | Opt-in executable minimal with one real managed Turn, restart and result readback | R0; selected D2 contents and D5 host/authority; may qualify source composition before M3 | V1–V5/V10 for the supported combination; source evidence alone does not qualify split-package installation | Return to previous qualified composition after reconciliation |
+| M3 | First deliver the core artifact with R1; then `loopx-core` + `loopx-workspace` + meta `loopx` as pre-releases; Node per D1 | Moves required by the selected artifact; D1 decided for its supported route; selected D2/D5 mapped; remaining M1/M2 tracked separately | rows 3–4, 7; repeat qualified R1/R2 journeys against clean split-package install | Unpublish pre-release |
+| R1 | First priority: opt-in standalone minimal install with one real managed Turn, restart and result readback | R0; selected D2 contents and D5 host/authority; may qualify source composition before M3 | V1–V5/V10 for the supported combination; source evidence alone does not qualify split-package installation | Return to previous qualified composition after reconciliation |
 | R2 | Standard uses the same kernel and activates one chosen product workflow | R1; existing frontend/session admission; may qualify source composition before M3 | V2/V5/V6/V10 and feature-off parity; repeat cold-install journey at M3 before claiming split-package qualification | Disable opt-in composition, retain state |
 | M4 | First capability without kernel callers moved to `packages/` | M3; D2 inventory | rows 5–6 | revert package |
 | M5 | Remaining eligible capabilities moved; public shims from M1/M2 removed after the documented compatibility window | M4 | full smoke identical | not applicable |
@@ -610,6 +745,18 @@ journey qualification slices in this same plan. R0 can ship before directory
 moves; it does not qualify the kernel. R3/R4 are optional and do not block a
 qualified CLI or managed task. No unused provider, field or framework is added
 ahead of its real caller. Report the applied/deferred adjacent refactor in each PR.
+
+The first R1/core-artifact proposal must name its installed source closure,
+required runtime and host/authority combination, absent optional content and
+remaining compatibility debt. Qualify it outside the checkout: clean install,
+ordinary task, invalid result refusal, interruption/restart and committed replay,
+with independent artifact and once-only settlement checks. Trace import/help,
+unknown/unsupported commands and the selected execution/recovery routes for
+unselected provider imports, service activation and external network use. Count
+mandatory user interactions, exposed management concepts, model reads and repair
+work separately from installation/runtime costs; reductions alone do not prove
+better model decisions. Reuse V1–V5/V10 and their owners, without a second gate
+framework or an implied public release/installed-host upgrade.
 
 ## 12. Open decisions
 
@@ -2819,6 +2966,82 @@ and this fixture qualification establishes no performance benefit. The report
 loading proposal #8360 retains its independent review and CI gates; the next
 step is exact-head review of this correction and native Windows readback. No
 main merge or installed-host upgrade is included.
+
+### 2026-11-11 — Standalone core artifact and low-ceremony boundary proposal
+
+The proposal was initially integrated with `main@eddd08d7d`; the final artifact
+is built on verified `main@43b4699cc` after incorporating four disjoint upstream
+commits. R1 and the core-artifact slice of M3
+are the immediate priority; directory/loading work serves that journey. The
+10% complexity / 90% current-function target, initial three-capability Standard
+selection and optional Yardstick boundary are design decisions, not measured
+benefit or completed Standard packaging.
+
+`packages/loopx-core/prepare.py` prepares a standalone source distribution from
+the same tracked implementation. The candidate wheel excludes the Chat package
+and old Chat modules, web assets, canary fleet and full CLI fallback. Unavailable
+full-CLI operations fail explicitly with installation guidance. Bootstrap,
+connect and configure-goal reuse existing registrars/handlers without loading
+the full CLI. Core help and the on-demand command reference advertise only
+available dispatchers; the ordinary installation retains its existing help.
+The top-level module budget stays at 127, with no new top-level
+module or state owner. Existing distribution ownership and physical-content
+fingerprints recognize core while retaining invalid-owner, extra-file, version
+and symlink refusals; aliases of the same physical installation root are not
+foreign owners. Core upgrades preserve the selected core distribution.
+
+On macOS arm64, Python 3.11.11 and Node 26.0.0 / SQLite 3.51.3, seven installed
+core qualification cases pass. All task setup uses only the installed wheel:
+connect a fresh default SQLite/hard-lease Goal, configure one Agent, create work
+and make an ordinary managed claim. The cases cover source-byte preservation,
+a clean install outside the checkout with no ordinary `loopx` distribution,
+Node-free import/help, unavailable-workspace refusal, a real generic-cli task
+with an independent numeric artifact check, accepted completion, SIGKILL after
+the confirmed result, original-attempt recovery/replay, corrupted-output
+refusal, and refusal after the original lease is renewed or released. Independent
+run-ledger reads verify one debit after completion/replay and zero before
+recovery or after rejection. Child command lookup uses the core environment,
+with no source `PYTHONPATH`. Telemetry is disabled; no model service or paid
+benchmark is run. The existing package-smoke workflow runs the same installed
+qualification; Linux CI and other platforms retain their own evidence boundary.
+
+Earlier successful process fixtures seeded soft-claim authority and therefore
+did not establish fresh-default usability. The fresh-default test exposed
+`lease_fence_required` on accepted completion: generic Turn writeback omitted
+the admitted execution proof. The existing TypeScript read/preparation owner
+now captures the selected canonical lease key/version in the original decision;
+the checked Turn execution context forwards that proof to the existing terminal
+owner. Recovery retains the original proof and rejects later generations. It
+never looks up a replacement lease to authorize an old result, claims or renews
+work on recovery, changes defaults, or weakens terminal validation. Native Hosts
+retain their existing owned completion-lease resolver. No new CLI option,
+method registry or authority owner was introduced.
+
+The final complete CLI parity suite passes 266 cases. A broader affected run
+on the first integration records 535 passed and three unavailable PowerShell
+cases skipped, but also three failures and 103 errors during exhausted local
+disk space; that run is not reported as passing. After reclaiming only completed
+task-owned temporary state, the affected nodes plus final installed-core cases
+pass in a 112-case rerun. The configured 17-file Python typecheck, targeted
+presentation/install typing, TypeScript typecheck and 95 selected TypeScript
+cases pass. Other earlier environment failures remain distinct: the original
+PATH supplied an unqualified SQLite runtime, and a copied managed-Python
+executable could not find its relative macOS library. Qualification uses an
+isolated qualified Node and POSIX-symlink virtual environments, without changing
+semantic oracles.
+
+**Remaining boundary:** the artifact still includes built-in capability
+implementations and several host/CLI compatibility dependencies. It does not
+qualify the minimal mechanism closure or complete R1/M3, decide all D1–D7,
+install/upgrade the owner's host, publish a release or demonstrate the 10%/90%
+goal. Continue with the existing core/capability owners: classify the actual
+selected closure, remove optional strategy/provider imports and instructions
+from ordinary execution/recovery, and qualify absent-component behavior before
+shrinking the artifact further. Standard uses the named small selection; bench,
+workbench and manager carry specialized workflows. Yardstick remains an
+independently optional method, with ordinary acceptance and authority preserved.
+Full cost, model decisions, context V5, other hosts and platform adoption remain
+separate acceptance gaps.
 
 ## Appendix B: Decision log
 

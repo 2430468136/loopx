@@ -5,7 +5,7 @@
 - **交付成熟度：** M1 源码实现；预算内规划为提案；M2/M3 未资格确认
 - **作者 / 归属：** LoopX maintainers
 - **创建日期：** 2026-11-05
-- **最近规范修订：** 2026-11-10
+- **最近规范修订：** 2026-11-12
 - **实现基线：** `8f6e88cb2a0fb76aba32bce979ba51293c1981f8`
 - **相关契约：** [分层 Stride](hierarchical-agent-stride-control-v0.zh-CN.md)、[研究探索](research-exploration-control-plane-v0.zh-CN.md)、[研究测量](long-horizon-harness-benchmark-research-program-v0.zh-CN.md)、[Controller/Executor 组合](controller-executor-unified-contract-v0.zh-CN.md)
 - **语义镜像（语言镜像）：** [English](target-yardstick-stride-decisions-v0.md)
@@ -21,6 +21,16 @@
 目标、理论假设、完整反馈案例与设计理由见[预算内研究规划](../../research/budgeted-research-planning.zh-CN.md)。
 该说明把设计连接到首个 EdgeBench 实验，不新增策略 owner，也不把解释性的 Bellman 模型当成
 已经实现的求解器。
+
+## 可选方法边界
+
+Yardstick 是既有 capability owner 下的可选评价／决策方法，与模型、执行、存储和
+测量 provider 分开；它不是最小内核的必经阶段。保留独立 `yardstick_enabled` 开关和
+当前默认关闭行为；安装 provider 或打开研究工作台不授予激活。关闭后仍保留普通任务
+验证、验收要求、权限和重放。
+[小内核装配 RFC](monorepo-distribution-split-v0.zh-CN.md#必需不变量可选方法与-provider)
+拥有 10% 复杂度／90% 当前功能覆盖目标及 bench、workbench、管家特化归属。本次澄清
+不新增 provider、注册表、运行时默认值，不删除 schema，也不宣称已交付收益。
 
 ## 1. 决策摘要
 

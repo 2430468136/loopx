@@ -5,7 +5,7 @@
 - **Delivery maturity:** M1 source implementation; budgeted planning proposed; M2/M3 unqualified
 - **Authors / owners:** LoopX maintainers
 - **Created:** 2026-11-05
-- **Last normative revision:** 2026-11-10
+- **Last normative revision:** 2026-11-12
 - **Implementation baseline:** `8f6e88cb2a0fb76aba32bce979ba51293c1981f8`
 - **Related contracts:** [Hierarchical stride](hierarchical-agent-stride-control-v0.md), [Research exploration](research-exploration-control-plane-v0.md), [Research measurement](long-horizon-harness-benchmark-research-program-v0.md), [Controller/executor composition](controller-executor-unified-contract-v0.md)
 - **Semantic mirror:** [中文版](target-yardstick-stride-decisions-v0.zh-CN.md)
@@ -25,6 +25,19 @@ For the objective, theoretical assumptions, worked feedback loop and rationale
 behind these choices, read [Budgeted research planning](../../research/budgeted-research-planning.md).
 It connects the design to the first EdgeBench experiment without adding another
 policy owner or treating the explanatory Bellman model as an implemented solver.
+
+## Optional-method boundary
+
+Yardstick is an optional evaluation/decision method under its existing
+capability owner, separate from model, execution, storage and measurement
+providers. It is not a mandatory stage of the minimal kernel. Preserve the
+independent `yardstick_enabled` switch and current default-off behavior;
+installing a provider or opening the research workbench grants no activation.
+Disabling it retains ordinary task validation, acceptance, authority and replay.
+The [small-kernel composition RFC](monorepo-distribution-split-v0.md#required-invariants-optional-methods-and-providers)
+owns the 10% complexity / 90% current-function coverage target and the placement
+of bench, workbench and manager specialization. This clarification adds no
+provider, registry, runtime default, schema removal or delivered-benefit claim.
 
 ## 1. Decision summary
 

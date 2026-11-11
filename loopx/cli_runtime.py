@@ -75,6 +75,7 @@ PROJECT_LIFECYCLE_COMMANDS = {
 _REGISTRY_INSPECTION_COMMANDS = frozenset({"registry", "registry-boundary"})
 _SELECTED_COMMANDS = _STATUS_COMMANDS | GLOBAL_READ_COMMANDS | PROJECT_LIFECYCLE_COMMANDS | _REGISTRY_INSPECTION_COMMANDS | {
 	"todo", "quota", "task-lease", "change-window", "delegation", "turn", "doctor", "commands", "version",
+	"bootstrap", "connect", "configure-goal",
 	"authority-archive", "coordination-shadow", "extension", "slash-commands",
 	"manager-inbox",
 	"agent-context", "agent-directory", "agent-capabilities",
@@ -392,7 +393,15 @@ def _handle_registry_inspection_command(
 
 def _build_selected_parser(command: str) -> LoopXArgumentParser:
 	parser, subparsers = build_cli_parser(parser_class=_SelectedArgumentParser)
-	if command in _REGISTRY_INSPECTION_COMMANDS:
+	if command in {"bootstrap", "connect"}:
+		from .cli_commands.bootstrap_connect import register_bootstrap_connect_command
+
+		register_bootstrap_connect_command(subparsers)
+	elif command == "configure-goal":
+		from .cli_commands.registry_admin_configure import register_configure_goal_command
+
+		register_configure_goal_command(subparsers)
+	elif command in _REGISTRY_INSPECTION_COMMANDS:
 		_register_registry_inspection_commands(subparsers)
 	elif command in _STATUS_COMMANDS:
 		from .cli_commands.status_registration import register_status_commands
@@ -517,6 +526,18 @@ def _dispatch_common_command(
 	registry_path: Path,
 	allow_missing_registry: bool,
 ) -> int | None:
+	if args.command in {"bootstrap", "connect"}:
+		from .cli_commands.bootstrap_connect import handle_bootstrap_connect_command
+
+		return handle_bootstrap_connect_command(
+			args, registry_path=registry_path, print_payload=print_payload,
+		)
+	if args.command == "configure-goal":
+		from .cli_commands.registry_admin import handle_registry_admin_command
+
+		return handle_registry_admin_command(
+			args, registry_path=registry_path, print_payload=print_payload,
+		)
 	if args.command == "host-mode-plan":
 		from .cli_commands.host_mode_plan import handle_host_mode_plan_command
 
@@ -637,7 +658,9 @@ def _dispatch_common_command(
 		)
 
 		print_payload(
-			build_command_reference_payload(), output_format(args),
+			build_command_reference_payload(
+				available_commands=_SELECTED_COMMANDS if _standalone_core() else None,
+			), output_format(args),
 			render_command_reference_markdown,
 		)
 		return 0
@@ -853,9 +876,24 @@ def _dispatch_selected(args: argparse.Namespace, raw_argv: list[str]) -> int:
 	return result
 
 
-def _run_full_cli(raw_argv: list[str]) -> int:
-	from .cli import main as cli_main
+def _standalone_core() -> bool:
+	from importlib.util import find_spec
 
+	return find_spec("loopx.cli") is None
+
+
+def _run_full_cli(raw_argv: list[str]) -> int:
+	try:
+		from .cli import main as cli_main
+	except ModuleNotFoundError as exc:
+		if exc.name != "loopx.cli":
+			raise
+		# Only the omitted full CLI is optional; never hide a broken dependency.
+		parser, _ = build_cli_parser()
+		parser.error(
+			"this command or argument is unavailable in the standalone core; "
+			"use its supported CLI options or the ordinary LoopX installation"
+		)
 	return cli_main(raw_argv)
 
 
@@ -868,7 +906,8 @@ def main(argv: list[str] | None = None) -> int:
 	from .help_surface import render_concise_help, top_level_help_requested
 
 	if top_level_help_requested(raw_argv):
-		print(render_concise_help(sys.argv[0] if argv is None else "loopx"), end="")
+		print(render_concise_help(sys.argv[0] if argv is None else "loopx",
+			standalone_core=_standalone_core()), end="")
 		return 0
 	command = _top_level_command(raw_argv)
 	from .usage_ping import begin, finish

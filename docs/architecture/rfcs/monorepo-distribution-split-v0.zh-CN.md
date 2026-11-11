@@ -4,7 +4,7 @@
 - **交付成熟度：** Proposal
 - **作者 / 负责人：** LoopX maintainers
 - **创建：** 2026-09-26
-- **最近规范性修订：** 2026-10-29
+- **最近规范性修订：** 2026-11-12
 - **实现基线：** 发行盘点 `2f3d13ae9`；运行时装配审计 `9cae3b28939f72fa4aadab5cfe49e19bcbdab372`
 - **相关契约：** [TypeScript 控制面迁移 v0](typescript-control-plane-migration-v0.zh-CN.md)、[Extensions 参考](../../reference/extensions.md)、[Capability 目录](../../../loopx/capabilities/README.md)、[总体路线图 v0](loopx-overall-roadmap-v0.zh-CN.md)（S2、S8、S12）、[import 边界测试](../../../tests/architecture/test_control_plane_import_boundaries.py)
 - **跟踪 issue：** [#5072](https://github.com/loopx-project/loopx/issues/5072)
@@ -25,7 +25,7 @@
 
 1. **仓库保持单一 monorepo。** 一条 PR 流程、一套 CI、一个发布列车。拆成多个 Git 仓库是本 RFC 的非目标。
 2. **安装物拆成多个发行物。** 单一 `loopx` wheel 逐步替换为 `loopx-core`、`loopx-workspace` 以及 `packages/` 下的按 capability 打包；`loopx` 保留为依赖全部子包的 meta-package。
-3. **先做顶层目录重组，再做打包变更。** `loopx/chat_*` 迁入 `loopx/chat/`，`loopx/*_goal_mode/` 迁入 `loopx/hosts/`，已建立的公开 import 保留至少一个 minor 版本的兼容 re-export；内部调用方一起迁移并删除旧内部入口。
+3. **按打包所需重组所选依赖闭包。** `loopx/chat_*` 迁入 `loopx/chat/`，`loopx/*_goal_mode/` 迁入 `loopx/hosts/`，已建立的公开 import 保留至少一个 minor 版本的兼容 re-export；内部调用方一起迁移并删除旧内部入口。
 4. **新增一条架构测试钉住顶层增长。** `loopx/*.py` 的文件数只能减少，与现有零例外 import 边界测试并列。
 5. **仅内核安装不得在 import 阶段要求 Node.js。** TS effect runtime 对有副作用的命令仍是必需的；缺失时必须以现有的类型化 `node_unavailable` 诊断呈现，而不是安装或 import 失败。
 6. **不变：** 内核权威、CLI 兼容基线、extension 生命周期规则、公开/私有边界、全部稳定协议。
@@ -38,6 +38,26 @@ Minimal 必须执行并恢复真实的受治理任务；standard 围绕同一内
 “小”分别从安装依赖、加载代码、激活服务、模型可见上下文衡量。
 发行表定义可安装内容，不代表每条命令都必须加载。安装 standard 不授予服务激活或权限。
 现有默认值与机器强制工作义务持续生效，直到合格且明确披露的迁移改变它们。
+
+### 当前交付优先级与无感使用
+
+下一项成果是**可独立安装、执行有界任务、中断恢复并返回已验证结果的 minimal 内核**。
+R1 与 M3 所需的 core 发行物切片一起推进；目录归属、模块增长约束和按需加载服务这条
+真实路径。不相关的 M1/M2 迁移、workspace 打包、全量 capability 迁移或新增 Controller
+会话不成为前置条件。完整 M3 仍须满足其具名发行物与兼容验收。仅源码执行、依赖单体包
+的空壳，或给完整安装换一个 core 名字，均不能取得独立发行物资格。
+
+设计问题是能否用约 **10% 的控制面复杂度覆盖 90% 的当前产品可完成工作**。这是削减机制的假设，不是实测
+结论、删代码配额或删除义务的授权。相对固定版本基线说明保留机制、移出的特化场景；
+声明覆盖率前先定义任务集合、分母、验收成果和完整成本；分别报告内核单独及按需特化
+后的现有用户旅程覆盖率。对照保留普通单 Agent 工程与知识任务、约束变化和中断恢复；
+不能移除特化旅程的分母来宣称覆盖 90%，benchmark 得分也不能替代功能覆盖率。
+
+普通调用方应提供任务和有实质影响的约束，随后取得进展、可用结果或可操作异常。
+Agent／host 准备身份、来源引用和既有事务命令；首个有用成果前，不要求用户学习
+Vision、Quota、Lease、Yardstick、Stride，或配置 preset 编辑器和看板。权限决策、预算
+耗尽、不确定副作用和 provider 不可用影响当前任务时再显现；自然语言展现须保留准确
+事实和恢复入口。
 
 ## 2. 问题与动机
 
@@ -111,7 +131,9 @@ Minimal 必须执行并恢复真实的受治理任务；standard 围绕同一内
 
 - 拆成多个 Git 仓库（见第 6 节与附录 D）。
 - 按发行物改许可证；除另有许可证 RFC 决定外，所有层保持 Apache-2.0。
-- 任何内核语义、TS 迁移顺序或稳定协议的变更。
+- 隐式削弱 canonical authority、必需不变量、TS 迁移顺序或稳定 wire 契约。
+  可选方法的依赖／上下文削减复用既有 owner，须明确验证一致性与回滚；本 RFC 本身
+  不改变当前默认值或 schema。
 - 移除旧兼容 facade（`loopx.status`、`loopx.quota`）；其退役仍由迁移 RFC 管辖。
 - 新模型 loop、scheduler、插件体系、记忆数据库、benchmark 原生 runner、存储迁移、设备框架或强制 daemon。
   本提案不授权 benchmark 运行、设备操作或宿主晋级。
@@ -181,12 +203,37 @@ Planner 可以建议工作或 stride，所属迁移规则决定准入与义务�
 预设不能把机器强制的 `must_attempt_work` 契约变成文字 guidance。
 内核是内聚领域的集合，不是一个大文件。相邻重构应让下一次修改更局部，并保持已刻画的行为。
 
+### 必需不变量、可选方法与 provider
+
+内核保留持久工作、合法范围内行动、已验收证据和恢复的最少机制。Bench、workbench、
+管家承载此边界之外的特化编排与展现，消费同一内核；普通任务不强制经过这些层。
+它们失败或缺席，不应阻止独立获授权的内核工作。这些是产品／任务装配，不是新的状态
+权威：可复用方法仍归各自 capability owner，界面仍是投影。
+
+**Yardstick 是可选决策方法，不是 runtime provider，也不是内核的必经阶段。** 分类
+Stride、Explore、反思／召回策略时同样区分：方法决定怎样推理、度量、比较和修订工作；
+provider 提供执行、存储、模型、传输或具体测量实现。本地方法可以无需外部 provider，
+多个方法也可复用同一 provider。不把每种可选方法都建成 provider，不为开关注册插件，
+也不增加并行的方法注册表。复用各能力的既有 owner 和配置／生命周期合同；Yardstick
+保留现有独立 `yardstick_enabled` 设置和默认关闭边界。
+
+关闭 Yardstick 时，普通结果验证仍然必需。选择／校准代理尺子、fidelity 研究和
+联合 target／yardstick 搜索是可选方法；合法 effect、用户验收要求与证据完整性仍受
+内核约束。开启 Explore 视图或安装 provider 不会开启 Yardstick。保留已配置义务与
+历史记录；本设计不静默改变当前默认值或删除字段。默认值或 owner 迁移需要独立行为
+一致性、回读与回滚证据。
+
+10% 目标分别观察强制概念、协议／决策步骤、模型读取、后台服务、维护与依赖负担，
+不等于文件名减少到 10%，也不等于提示更短而仪式完全相同。每个保留机制说明保护哪项
+必要成果或不变量；每项特化证明在不加载、激活、注入它的情况下，内核仍能执行与恢复。
+将这些检查放入既有 V1–V5／V10，不再新增一套治理框架。
+
 ### 发行层之上的预设
 
 | 装配 | 必需内容 | 显式可选内容 |
 | --- | --- | --- |
 | Minimal | Bootstrap、同一治理实现、一个受支持 authority provider、一条合格执行路径、紧凑状态/结果回读与恢复 | 任务能力、持久召回、observer、connector、workspace UI |
-| Standard | 同一内核与兼容的普通产品装配 | 仅加载/激活所选工作流需要的 capability、宿主、UI/IM 服务与 connector |
+| Standard | 同一内核，加上下述少量具名日常能力 | 仅加载／启用所选能力及其所需 provider；工作台 UI、IM 和连接器仍可选 |
 | 研究配置 | 固定版本的 minimal 或 standard 装配及声明过的实验 overlay | 仅实验设计中列出的 instrumentation 或 ablation |
 
 `loopx` meta-package 保留安装兼容；已安装 standard 内容不等于激活列表。
@@ -194,9 +241,54 @@ Minimal 是可执行装配，不是在 standard 完成全部初始化后加开�
 不带宿主的只读 kernel library 不构成可执行预设资格。
 精确内容与首个受支持宿主/authority 组合由 D2/D5 决定。
 
+**首批 Standard 选型：** 组合三个既有能力，服务继续普通工作、交付仓库变更和检查 PR。
+一起分发不使这些能力成为内核。
+
+| 用户结果 | 既有 capability／owner | 启用边界 |
+| --- | --- | --- |
+| 继续工作时取回相关既有指导 | `agent-turn-recall`／`capabilities/agent_turn_recall` | 冷路径预览不访问 provider；召回沿用显式配置和已获授权的来源 |
+| 从 issue 到经验证的变更 | `issue-fix`／`capabilities/issue_fix` | 仅加载请求的工作流；执行、外部读写和发布仍遵守各自授权 |
+| 交付前审查变更 | `pull-request-review`／`capabilities/pr_review_queue` | 显式进入审阅／readiness；安装不启动队列 watcher，不发布评审或合并 |
+
+它们是当前注册在 provider `loopx-core` 下的既有 `builtin` capability；这个打包／
+provider 标签不使领域策略成为强制治理。保留现有 `active-preview` 成熟度和默认关闭
+设置。本选型是 Standard 安装闭包提案，不表示现有单体 `loopx` wheel 已排除其他能力。
+通过既有 registry／lifecycle 落实包与 import 边界后，再按所选安装验证 R2。
+不新增 preset executor、provider id 或启用开关。调用者通过既有入口提出任务，host
+只在当前 readiness／准入允许时加载相应 owner；不增加 Standard 设置向导，不要求
+用户说出内部方法名，也不用关键词分类器推断启用。仅在该任务需要时呈现缺失前提。
+可选召回缺席时，Minimal 仍保有基本恢复。Yardstick、Stride、Explore、benchmark instrumentation 和管家路由继续
+显式可选；三个 Standard 能力必须能在它们缺席时工作。受支持通用宿主独立组合，
+安装不启动额外模型会话，也不授予来源访问权限。
+
 装配、managed/attached 模式、宿主 provider、一个/两个模型 Session、存储 provider、benchmark arm
 保持独立。Minimal 不意味着 attached，standard 不要求双模型 Session，research 不等于不受治理。
 只发布已测组合，保留现有模式默认值；改变装配不能静默改变 binding 的执行 owner。
+
+### 最小机制与场景特化
+
+通用机制是：保留工作意图与约束；经一个已准入宿主执行；记录证据与续行／恢复点。
+这些职责复用既有 typed owner，不新造三种记录、替代协议或另一个循环。确定性代码
+负责身份、权限、停止、预算、回执和重放；模型负责领域推理、方案选择与证据解释。
+Host 能携带且内核能校验的记账，不应让模型反复重建。
+
+| 调用方／任务 | 共用机制 | 仅此场景需要时启用 |
+| --- | --- | --- |
+| 普通单 Agent 工作 | 持久意图／约束、一个执行路径、证据、恢复与结果回读 | 可选 Yardstick／Stride、规划／召回／评审方法；不强制研究看板或 peer 设置 |
+| Benchmark | 相同工作／权限与宿主 | 既有 toolkit 隔离、冻结实验组、原生 evaluator 和完整成本采集 |
+| 研究工作台 | 相同工作／权限与证据 | Explore 假设、实验、比较与研究展现 |
+| 管家／peer 团队 | 相同工作／权限与恢复 | 既有请求路由、peer 发现、claim／lease、范围化交接、采纳与返回 |
+| App／IM／外部操作 | 相同已接受工作与 effect 身份 | 所选 UI／传输、受众检查、provider 回读及操作专属联锁 |
+
+特化复用对应 capability／provider owner，安装、加载、激活和上下文投影分别决定。
+此表不增加 preset id，也不关闭已配置义务。每项依赖说明属于必需 owner、兼容依赖、
+可选特化还是迁移积压；保留积压须说明实际可达原因，不能默认称为最小。单 Agent 仍
+遵守当前 claim／lease 规则；把策略移出默认路径需要独立一致性与披露过的迁移证据。
+
+无感设计同时面向用户与模型输入：提供当前任务、适用约束、判断所需证据和下一项可用
+操作；稳定记账留在 host binding，详情按需可达。重新规划、约束变化、交接与恢复扩大
+相应上下文，不把所有 capability 指令注入每个普通 Turn。复用既有 Progressive／Delta
+owner 和新鲜权限校验；不引入关键词分类器、新上下文库、一刀切截断或额外 controller。
 
 ### 受支持的宿主接入决策
 
@@ -431,8 +523,8 @@ Live、性能和晋级证据分别记录。
 | R0 | 已刻画的 `performance-diagnosis` selected route 与实测加载接缝 | 现有路由/owner/依赖图；D6 测量决策；不依赖包发布 | 本路由 V1/V3、V10 基线；行为不变 | 撤回路由提取 |
 | M1 | `loopx/chat_*` → `loopx/chat/` 遵守 I3 兼容；预算按净减少调低 | M0 | 第 9 节第 1–2 行 | revert |
 | M2 | `loopx/*_goal_mode` → `loopx/hosts/` 遵守 I3 兼容 | M0 | 第 1–2 行 | revert |
-| M3 | `loopx-core` + `loopx-workspace` + meta `loopx` 以预发布发布；Node 按 D1 以 extra 或捆绑交付 | M1、M2；D1 已决；所选 D2/D5 装配已映射 | 第 3–4、7 行；在干净拆包安装上重验已合格的 R1/R2 旅程 | 撤下预发布 |
-| R1 | Opt-in 可执行 minimal，含一个真实 managed Turn、重启与结果回读 | R0；所选 D2 内容和 D5 宿主/authority；可先于 M3 验证源码装配 | 此受支持组合的 V1–V5/V10；源码证据本身不代表拆包安装合格 | 核对后返回旧合格装配 |
+| M3 | 先与 R1 交付 core 发行物，再将 `loopx-core` + `loopx-workspace` + meta `loopx` 以预发布发布；Node 按 D1 以 extra 或捆绑交付 | 所选发行物所需移动；其受支持路径的 D1 已决；所选 D2/D5 装配已映射；其余 M1/M2 独立跟踪 | 第 3–4、7 行；在干净拆包安装上重验已合格的 R1/R2 旅程 | 撤下预发布 |
+| R1 | 第一优先：opt-in 独立安装 minimal，含一个真实 managed Turn、重启与结果回读 | R0；所选 D2 内容和 D5 宿主/authority；可先于 M3 验证源码装配 | 此受支持组合的 V1–V5/V10；源码证据本身不代表拆包安装合格 | 核对后返回旧合格装配 |
 | R2 | Standard 使用同一内核，只激活所选产品工作流 | R1；现有前端/Session 准入；可先于 M3 验证源码装配 | V2/V5/V6/V10、关闭一致性；声称拆包资格前，在 M3 重验冷安装旅程 | 关闭 opt-in 装配，保留状态 |
 | M4 | 第一个无内核调用方的 capability 迁入 `packages/` | M3；D2 清单 | 第 5–6 行 | revert 单包 |
 | M5 | 其余符合条件的 capability 迁移；M1/M2 的公开 shim 在文档化兼容窗口结束后移除 | M4 | 完整 smoke 一致 | 不适用 |
@@ -442,6 +534,14 @@ Live、性能和晋级证据分别记录。
 M0–M5 保留原发行里程碑；R0–R4 是同一计划中的运行时和旅程资格切片。
 R0 可以先于目录移动交付，但不代表内核合格。R3/R4 可选，不阻塞已合格的 CLI 或 managed 任务。
 真实调用者出现前不增加闲置 provider、字段或框架。每个 PR 记录应用/推迟的相邻重构。
+
+首个 R1／core 发行物提案须说明安装源码闭包、必需 runtime、宿主／authority 组合、
+缺席的可选内容与保留兼容积压。在 checkout 外验证干净安装、普通任务、无效结果拒绝、
+中断／重启和已提交重放；独立检查产物与只结算一次。追踪 import／help、未知／不支持
+命令及所选执行／恢复路径的未选 provider 导入、服务激活和外部网络。必需用户交互、
+暴露的管理概念、模型读取与修复工作和安装／runtime 成本分别计数；减少本身不证明
+模型判断更好。复用 V1–V5／V10 及其 owner，不新增门禁框架，也不隐含公开发布或
+installed-host 升级。
 
 ## 12. 未决决策
 
@@ -2189,6 +2289,58 @@ full marginal-cost／adoption 验收及全部历史／冻结失败。不重跑�
 campaign，本 fixture 资格不证明性能收益。报告按需加载提案 #8360 保留独立
 review／CI gate；下一步为本修正的 exact-head 评审与原生 Windows 读回。不包含
 合入 main 或 installed-host 升级。
+
+### 2026-11-11 — 独立 core 发行物与无感边界提案
+
+本提案先整合到 `main@eddd08d7d`；最终发行物纳入四个无重叠上游 commit，基于已验证
+的 `main@43b4699cc` 构建。
+规范性优先级为 R1 与 M3 的 core 发行物切片，目录／加载工作服务这条旅程。
+10% 复杂度／90% 当前功能目标、首批三个 Standard 能力和 Yardstick 可选边界属于
+设计决策，不是已测收益，也不表示 Standard 拆包已完成。
+
+`packages/loopx-core/prepare.py` 从同一份 tracked 实现准备独立源码发行物。候选 wheel
+排除 Chat 包及旧 Chat 模块、web 资源、canary fleet 和完整 CLI fallback；不可用的
+完整 CLI 操作明确拒绝，并给出安装指引。Bootstrap、connect、configure-goal 复用
+原 registrar／handler，不加载完整 CLI。Core 帮助和按需命令目录只展示可用 dispatcher；
+普通安装保留既有帮助。顶层模块预算仍为 127，没有新增顶层模块
+或状态 owner。既有发行物归属和物理内容指纹检查识别 core，保留无效归属、多余文件、
+版本和 symlink 拒绝；指向相同物理安装根的别名不属于外部 owner。Core 升级保留
+所选 core 发行物。
+
+在 macOS arm64、Python 3.11.11、Node 26.0.0／SQLite 3.51.3 上，七项安装 core
+资格用例通过。所有任务初始化都只使用已安装 wheel：连接全新默认 SQLite／hard-lease
+Goal、配置一个 Agent、创建任务并通过普通 managed claim 准备执行。覆盖源码字节保留；
+checkout 外无普通 `loopx` 发行物的干净安装；无 Node 的 import／help；工作台不可用
+拒绝；真实 generic-cli 任务、独立数值产物验收和已接受完成；确认结果后的 SIGKILL、
+原 attempt 恢复／重放；损坏产物拒绝；原租约续期或释放后的拒绝。独立读取 runs 账本
+确认完成／重放共扣一次，恢复前或拒绝后扣零次。子命令查找使用 core 环境，不借用
+源码 `PYTHONPATH`。隔离夹具关闭遥测，未运行模型服务或付费 benchmark。既有
+package-smoke 流水线运行同一安装资格验证；Linux CI 与其他平台保留各自证据边界。
+
+较早通过的进程夹具以 soft-claim 状态初始化，不能证明全新默认路径可用。新的全新
+默认用例在完成回写时暴露 `lease_fence_required`：generic Turn 漏传准入的执行凭据。
+既有 TypeScript 读取／准备 owner 现在将所选 canonical 租约的 key／version 捕获到
+原始决策，经已校验 Turn execution context 转交给既有 terminal owner。恢复保留
+原凭据，拒绝后续代次；不为旧结果查找替代租约，不在恢复时 claim／续租，不改默认值，
+也不削弱 terminal 验收。Native Host 保留既有自有 completion-lease resolver。
+未新增 CLI 参数、方法 registry 或权限 owner。
+
+最终完整 CLI 一致性套件 266 项通过。首轮整合上的广泛受影响回归记录 535 项通过、
+三个不可用 PowerShell 用例跳过，但本机磁盘耗尽期间还出现三项失败和 103 项错误；
+不将该轮报告为通过。只回收已结束的本任务临时状态后，受影响节点与最终安装 core
+用例在 112 项重跑中通过。配置的 17 文件 Python 类型检查、展示／安装定向类型检查、
+TypeScript 类型检查和 95 项所选 TypeScript 用例通过。其他早期环境失败单独保留：
+原 PATH 的 SQLite runtime 不合格；复制的 managed-Python 可执行文件找不到相对
+macOS 动态库。资格验证使用隔离的合格 Node 和 POSIX symlink 虚拟环境，没有修改
+语义 oracle。
+
+**剩余边界：** 此发行物仍包含内置 capability 实现和若干 host／CLI 兼容依赖，不证明
+最小机制闭包或完整 R1／M3，不决定全部 D1–D7，不安装／升级 owner 宿主，不公开发布，
+也不证明 10%／90% 目标。沿既有 core／capability owner 继续分类真实所选闭包，移出
+普通执行／恢复中的可选策略／provider 导入与指令，先验证组件缺席行为，再继续缩小
+发行物。Standard 采用具名少量能力；bench、workbench、管家承载特化流程。Yardstick
+保持独立可选方法，普通验收和权限仍有效。完整成本、模型判断、上下文 V5、其他宿主
+及平台采纳仍是独立验收缺口。
 
 ## 附录 B：决策日志
 
