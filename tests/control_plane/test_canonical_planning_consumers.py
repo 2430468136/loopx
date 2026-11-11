@@ -267,6 +267,52 @@ def test_replan_completion_cadence_cannot_be_hidden_by_stale_display(
     assert empty is None
 
 
+def test_replan_writeback_reuses_quota_projection_terminal_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from loopx.control_plane import effect_runtime as runtime_owner
+
+    state = _completed_chain()
+    registry, path, goal = _fixture(tmp_path, state=state)
+    goal["execution_profile"] = {"replan_after_completed_todos": 3}
+    fields = _promote(registry, path, goal)
+    requests: list[tuple[str, dict]] = []
+    dispatch = runtime_owner.effect_runtime_request
+
+    def observed(method: str, params: dict, **kwargs: object) -> dict:
+        if method in {"todo.read", "todo.context.page"}:
+            requests.append((method, params))
+        return dispatch(method, params, **kwargs)
+
+    monkeypatch.setattr(runtime_owner, "effect_runtime_request", observed)
+    with runtime_owner.effect_runtime_request_scope():
+        obligation, _ = qualify_replan_writeback(
+            state_text="",
+            newest_first_runs=[],
+            agent_id="agent-a",
+            goal_id="goal-a",
+            registry_goal=goal,
+            todo_fields=fields,
+        )
+
+    assert obligation is not None
+    quota_reads = [
+        params
+        for method, params in requests
+        if method == "todo.read" and params.get("kind") == "quota_projection"
+    ]
+    assert len(quota_reads) == 1
+    assert [
+        request["summary_request"].get("consume_display_views")
+        for request in quota_reads[0]["requests"]
+    ] == [False, True]
+    assert [
+        request["resume_options"].get("available_capabilities")
+        for request in quota_reads[0]["requests"]
+    ] == [None, None]
+    assert not [params for method, params in requests if method == "todo.context.page"]
+
+
 def test_todo_add_replan_guard_binds_canonical_obligation_without_display(
     tmp_path: Path,
 ) -> None:

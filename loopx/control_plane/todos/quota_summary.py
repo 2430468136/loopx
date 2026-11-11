@@ -511,6 +511,7 @@ def select_quota_todo_summaries(
 def select_quota_todo_contexts(
     user_canonical: Any, user_asset: Any, agent_canonical: Any, agent_asset: Any,
     *, agent_identity: dict[str, Any] | None, available_capabilities: Any,
+    resolve_capacity: bool = True,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
     """The quota caller explicitly consumes both summaries and Agent displays.
 
@@ -532,7 +533,7 @@ def select_quota_todo_contexts(
         roles.append(role)
         requests.append(project_quota_planning(source, all_open_items=[], source_open_count=source.get("open_count"),
             agent_identity=agent_identity, filter_user_gate_blocks_agent=role == "user",
-            available_capabilities=available_capabilities, resolve_capacity=True,
+            available_capabilities=available_capabilities, resolve_capacity=resolve_capacity,
             summary_kind=kind, consume_display_views=role == "agent", request_only=True))
         requests[-1]["summary_request"]["consume_source_summary"] = role == "user"
         requests[-1]["summary_request"]["consume_vision_wait_basis"] = role == "agent"
